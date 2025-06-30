@@ -665,28 +665,6 @@ export default function SettingsScreen({ contact, onBack, onSave, onDelete }: Se
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-slate-400">Trigger:</span>
-                              <span className="text-white ml-2 capitalize">{integration.config.trigger}</span>
-                            </div>
-                            {integration.config.intervalMinutes && (
-                              <div>
-                                <span className="text-slate-400">Interval:</span>
-                                <span className="text-white ml-2">{integration.config.intervalMinutes} minutes</span>
-                              </div>
-                            )}
-                            <div>
-                              <span className="text-slate-400">Status:</span>
-                              <span className={`ml-2 capitalize ${
-                                integration.status === 'active' ? 'text-green-400' : 
-                                integration.status === 'error' ? 'text-red-400' : 'text-yellow-400'
-                              }`}>
-                                {integration.status}
-                              </span>
-                            </div>
-                          </div>
-
                           {integration.config.description && (
                             <div className="mt-3 pt-3 border-t border-slate-700">
                               <p className="text-slate-300 text-sm">{integration.config.description}</p>
