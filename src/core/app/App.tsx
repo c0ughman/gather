@@ -16,6 +16,7 @@ import { DocumentInfo } from '../../modules/fileManagement/types/documents';
 import { documentContextService } from '../../modules/fileManagement/services/documentContextService';
 import { geminiService } from '../../modules/fileManagement/services/geminiService';
 import { supabaseService } from '../../modules/database/services/supabaseService';
+import { supabase } from '../../modules/database/lib/supabase';
 import { integrationsService, getIntegrationById } from '../../modules/integrations';
 import { useLocalStorage, useMobile } from '../hooks/useLocalStorage';
 import { SubscriptionBadge, ManageSubscriptionButton } from '../../modules/payments';
