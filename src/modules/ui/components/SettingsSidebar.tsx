@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Save, User, Database, FileText, Plus, Trash2, Settings, X, Upload, Volume2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Save, User, Database, FileText, Plus, Trash2, Settings, X, Upload, Volume2, AlertTriangle } from 'lucide-react';
 import { AIContact } from '../../../core/types/types';
 import { DocumentInfo } from '../../fileManagement/types/documents';
 import { IntegrationInstance } from '../../integrations/types/integrations';
@@ -8,19 +8,22 @@ import DocumentUpload, { DocumentList } from './DocumentUpload';
 import IntegrationsLibrary from './IntegrationsLibrary';
 import IntegrationSetup from './IntegrationSetup';
 import { Integration, IntegrationConfig } from '../../integrations/types/integrations';
+import { supabase } from '../../database/lib/supabase';
 
 interface SettingsSidebarProps {
   contact: AIContact | null;
   onSave: (contact: AIContact) => void;
   onClose?: () => void;
+  onDelete?: (contactId: string) => void;
   className?: string;
 }
 
-export default function SettingsSidebar({ contact, onSave, onClose, className = '' }: SettingsSidebarProps) {
+export default function SettingsSidebar({ contact, onSave, onClose, onDelete, className = '' }: SettingsSidebarProps) {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     basic: true,
     integrations: true,
-    documents: true
+    documents: true,
+    danger: false
   });
 
   const [formData, setFormData] = useState({
@@ -51,6 +54,10 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
   const [setupIntegration, setSetupIntegration] = useState<Integration | null>(null);
   const [editingIntegration, setEditingIntegration] = useState<IntegrationInstance | null>(null);
 
+  // Delete state
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+
   // Update form data when contact changes
   useEffect(() => {
     if (contact) {
@@ -62,6 +69,7 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
       setIntegrations(contact.integrations || []);
       setDocuments(contact.documents || []);
       setHasChanges(false);
+      setDeleteConfirmation('');
     }
   }, [contact]);
 
@@ -92,6 +100,45 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
     
     onSave(updatedContact);
     setHasChanges(false);
+  };
+
+  const handleDeleteAgent = async () => {
+    if (!contact || deleteConfirmation !== contact.name || isDeleting) return;
+
+    try {
+      setIsDeleting(true);
+      console.log(`Deleting agent: ${contact.id}`);
+
+      // Delete from Supabase
+      const { error } = await supabase
+        .from('user_agents')
+        .delete()
+        .eq('id', contact.id);
+
+      if (error) {
+        console.error('Error deleting agent:', error);
+        alert('Failed to delete agent. Please try again.');
+        return;
+      }
+
+      console.log('Agent deleted successfully');
+      
+      // Call the onDelete callback if provided
+      if (onDelete) {
+        onDelete(contact.id);
+      }
+      
+      // Close sidebar
+      if (onClose) {
+        onClose();
+      }
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmation('');
+    }
   };
 
   // Document handlers
@@ -419,10 +466,6 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
                         </button>
                       </div>
                     </div>
-                    <div className="text-xs text-slate-400 truncate">
-                      Trigger: {integration.config.trigger}
-                      {integration.config.intervalMinutes && ` • ${integration.config.intervalMinutes}m`}
-                    </div>
                   </div>
                 );
               })}
@@ -431,7 +474,7 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
         </div>
 
         {/* Documents Section */}
-        <div>
+        <div className="border-b border-slate-700">
           <button
             onClick={() => toggleSection('documents')}
             className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors duration-200"
@@ -476,6 +519,72 @@ export default function SettingsSidebar({ contact, onSave, onClose, className = 
                   <p className="text-xs">No documents uploaded</p>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Danger Zone Section */}
+        <div>
+          <button
+            onClick={() => toggleSection('danger')}
+            className="w-full p-4 flex items-center justify-between hover:bg-red-900/10 transition-colors duration-200"
+          >
+            <div className="flex items-center space-x-3">
+              <AlertTriangle className="w-4 h-4 text-red-400" />
+              <span className="text-red-400 font-medium">Danger Zone</span>
+            </div>
+            {expandedSections.danger ? (
+              <ChevronDown className="w-4 h-4 text-red-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-red-400" />
+            )}
+          </button>
+          
+          {expandedSections.danger && (
+            <div className="px-4 pb-4 space-y-4 bg-red-900/5 border-t border-red-700/30">
+              <div className="pt-4">
+                <h4 className="text-red-400 font-medium text-sm mb-2">Delete Agent</h4>
+                <p className="text-slate-400 text-xs mb-3">
+                  Permanently delete this agent and all associated data. This action cannot be undone.
+                </p>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-red-400 mb-2">
+                      Type the agent name to confirm deletion:
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteConfirmation}
+                      onChange={(e) => setDeleteConfirmation(e.target.value)}
+                      placeholder={contact.name}
+                      className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg border border-red-700 focus:border-red-500 focus:outline-none transition-colors duration-200 text-sm"
+                      disabled={isDeleting}
+                    />
+                    <p className="text-slate-500 text-xs mt-1">
+                      Type "{contact.name}" exactly as shown above
+                    </p>
+                  </div>
+                  
+                  <button
+                    onClick={handleDeleteAgent}
+                    disabled={deleteConfirmation !== contact.name || isDeleting}
+                    className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200 text-sm"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Deleting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3 h-3" />
+                        <span>Delete Agent</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

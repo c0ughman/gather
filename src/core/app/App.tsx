@@ -1,23 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AIContact, Message } from '../types/types';
-import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen } from '../../modules/ui';
-import { ChatScreen } from '../../modules/chat';
-import { CallScreen } from '../../modules/voice';
-import { AuthScreen } from '../../modules/auth';
-import { OAuthCallback } from '../../modules/oauth';
-import { useAuth } from '../../modules/auth/hooks/useAuth';
-import { supabase } from '../../modules/database/lib/supabase';
-import LandingPage from '../../components/LandingPage';
-import SignupPage from '../../components/SignupPage';
-import PricingPage from '../../components/PricingPage';
-import SuccessPage from '../../components/SuccessPage';
-import { DocumentInfo } from '../../modules/fileManagement/types/documents';
-import { IntegrationInstance } from '../../modules/integrations/types/integrations';
-import { useMobile } from '../hooks/useLocalStorage';
-import { MobileContactsScreen, MobileLibraryScreen, MobileNavigation } from '../../modules/ui';
+import { useAuth } from '../modules/auth/hooks/useAuth';
+import { AIContact, Message } from './types/types';
+import { DocumentInfo } from '../modules/fileManagement/types/documents';
+import { documentContextService } from '../modules/fileManagement/services/documentContextService';
+import { geminiService } from '../modules/fileManagement/services/geminiService';
+import { integrationsService } from '../modules/integrations/core/integrationsService';
+import { getIntegrationById } from '../modules/integrations/data/integrations';
+import { supabase } from '../modules/database/lib/supabase';
 
-type ViewType = 'landing' | 'signup' | 'signin' | 'pricing' | 'dashboard' | 'chat' | 'call' | 'settings' | 'create-agent';
+// Import components
+import AuthScreen from '../modules/auth/components/AuthScreen';
+import CallScreen from '../modules/voice/components/CallScreen';
+import { ChatScreen } from '../modules/chat';
+import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen } from '../modules/ui';
+import LandingPage from '../components/LandingPage';
+import SignupPage from '../components/SignupPage';
+import PricingPage from '../components/PricingPage';
+import SuccessPage from '../components/SuccessPage';
+import OAuthCallback from '../modules/oauth/components/OAuthCallback';
+
+// Mobile components
+import MobileContactsScreen from '../modules/ui/components/MobileContactsScreen';
+import MobileLibraryScreen from '../modules/ui/components/MobileLibraryScreen';
+import MobileNavigation from '../modules/ui/components/MobileNavigation';
+
+// Hook to detect mobile
+function useMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+}
 
 interface AgentTemplate {
   id: string;
@@ -37,133 +60,192 @@ interface AgentTemplate {
 
 export default function App() {
   const { user, loading: authLoading } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewType>('landing');
+  const isMobile = useMobile();
+  
+  // App state
+  const [currentView, setCurrentView] = useState<'landing' | 'signup' | 'signin' | 'pricing' | 'dashboard' | 'chat' | 'call' | 'settings' | 'create-agent' | 'mobile-contacts' | 'mobile-library'>('landing');
+  const [mobileView, setMobileView] = useState<'contacts' | 'library'>('library');
   const [contacts, setContacts] = useState<AIContact[]>([]);
+  const [selectedContact, setSelectedContact] = useState<AIContact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationDocuments, setConversationDocuments] = useState<DocumentInfo[]>([]);
-  const [selectedContact, setSelectedContact] = useState<AIContact | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<'contacts' | 'library'>('library');
-  
-  // Agent creation state
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [newAgentData, setNewAgentData] = useState<Partial<AIContact> | null>(null);
 
-  const isMobile = useMobile();
-
-  // Load user agents on mount and when user changes
-  useEffect(() => {
-    if (user) {
-      loadUserAgents();
-      // Start with dashboard view when user is authenticated
-      if (currentView === 'landing' || currentView === 'signup' || currentView === 'signin') {
-        setCurrentView('dashboard');
-      }
-    } else if (!authLoading) {
-      // Only redirect to landing if auth is not loading
-      setCurrentView('landing');
-      setContacts([]);
-      setMessages([]);
-      setSelectedContact(null);
-    }
-  }, [user, authLoading]);
-
+  // Load user agents from Supabase
   const loadUserAgents = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      console.log('Loading user agents...');
+      console.log('Loading user agents from Supabase...');
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        return;
+      }
 
-      const { data, error } = await supabase
+      const { data: agents, error } = await supabase
         .from('user_agents')
         .select(`
           *,
-          conversations:conversations(count)
+          agent_documents (
+            id,
+            name,
+            original_filename,
+            file_type,
+            file_size,
+            file_url,
+            content,
+            summary,
+            extracted_text,
+            processing_status,
+            extraction_quality,
+            metadata,
+            folder,
+            tags,
+            access_count,
+            last_accessed_at,
+            uploaded_at,
+            created_at,
+            updated_at
+          ),
+          agent_integrations (
+            id,
+            template_id,
+            name,
+            description,
+            config,
+            credentials,
+            trigger_type,
+            interval_minutes,
+            status,
+            last_executed_at,
+            last_success_at,
+            last_error_at,
+            error_message,
+            execution_count,
+            last_data,
+            data_summary,
+            created_at,
+            updated_at
+          )
         `)
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error loading user agents:', error);
-        setError(`Failed to load agents: ${error.message}`);
         return;
       }
 
-      console.log('Raw agents data:', data);
+      console.log('Raw agents data:', agents);
 
-      const transformedContacts: AIContact[] = (data || []).map(agent => ({
-        id: agent.id,
-        name: agent.name,
-        description: agent.description,
-        initials: agent.initials,
-        color: agent.color,
-        voice: agent.voice,
-        avatar: agent.avatar_url,
-        status: agent.status as 'online' | 'busy' | 'offline',
-        lastSeen: agent.last_seen,
-        personalityPrompt: agent.personality_prompt,
-        systemInstructions: agent.system_instructions,
-        customSettings: agent.custom_settings,
-        folder: agent.folder,
-        tags: agent.tags || [],
-        isFavorite: agent.is_favorite,
-        sortOrder: agent.sort_order,
-        totalConversations: agent.total_conversations,
-        totalMessages: agent.total_messages,
-        lastUsedAt: agent.last_used_at ? new Date(agent.last_used_at) : undefined,
-        createdAt: new Date(agent.created_at),
-        updatedAt: new Date(agent.updated_at),
-        // These will be loaded separately when needed
-        integrations: [],
-        documents: []
-      }));
+      // Transform the data to match our AIContact interface
+      const transformedContacts: AIContact[] = (agents || []).map(agent => {
+        // Transform documents
+        const documents: DocumentInfo[] = (agent.agent_documents || []).map(doc => ({
+          id: doc.id,
+          name: doc.name,
+          type: doc.file_type,
+          size: doc.file_size,
+          content: doc.content || doc.extracted_text || '',
+          uploadedAt: new Date(doc.uploaded_at),
+          metadata: {
+            ...doc.metadata,
+            extractionQuality: doc.extraction_quality,
+            extractionSuccess: doc.processing_status === 'completed'
+          }
+        }));
+
+        // Transform integrations
+        const integrations = (agent.agent_integrations || []).map(integration => ({
+          id: integration.id,
+          integrationId: integration.template_id,
+          name: integration.name,
+          config: {
+            integrationId: integration.template_id,
+            enabled: integration.status === 'active',
+            settings: integration.config || {},
+            trigger: integration.trigger_type || 'chat-start',
+            intervalMinutes: integration.interval_minutes || 30,
+            description: integration.description || '',
+            oauthTokenId: integration.credentials?.oauthTokenId,
+            oauthConnected: !!integration.credentials?.oauthTokenId
+          },
+          status: integration.status as 'active' | 'inactive' | 'error' | 'pending'
+        }));
+
+        return {
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+          initials: agent.initials,
+          color: agent.color,
+          voice: agent.voice,
+          avatar: agent.avatar_url,
+          status: agent.status as 'online' | 'busy' | 'offline',
+          lastSeen: agent.last_seen,
+          personalityPrompt: agent.personality_prompt,
+          systemInstructions: agent.system_instructions,
+          customSettings: agent.custom_settings,
+          folder: agent.folder,
+          tags: agent.tags || [],
+          isFavorite: agent.is_favorite,
+          sortOrder: agent.sort_order,
+          totalConversations: agent.total_conversations,
+          totalMessages: agent.total_messages,
+          lastUsedAt: agent.last_used_at ? new Date(agent.last_used_at) : undefined,
+          documents: documents.length > 0 ? documents : undefined,
+          integrations: integrations.length > 0 ? integrations : undefined
+        };
+      });
 
       console.log('Transformed contacts:', transformedContacts);
       setContacts(transformedContacts);
     } catch (error) {
       console.error('Error loading user agents:', error);
-      setError('An unexpected error occurred while loading agents');
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleGetStarted = () => {
-    setCurrentView('signup');
-  };
+  // Load agents when user is authenticated
+  useEffect(() => {
+    if (user) {
+      loadUserAgents();
+    }
+  }, [user]);
 
-  const handleSignUp = () => {
-    setCurrentView('signup');
-  };
+  // Set initial view based on authentication and device
+  useEffect(() => {
+    if (authLoading) return;
+    
+    if (user) {
+      if (isMobile) {
+        setCurrentView('mobile-library');
+      } else {
+        setCurrentView('dashboard');
+      }
+    } else {
+      setCurrentView('landing');
+    }
+  }, [user, authLoading, isMobile]);
 
-  const handleSignIn = () => {
-    setCurrentView('signin');
-  };
-
-  const handleBackToLanding = () => {
-    setCurrentView('landing');
-  };
-
-  const handleAuthSuccess = () => {
-    setCurrentView('dashboard');
-  };
-
-  const handleSelectPlan = (plan: string) => {
-    console.log('Selected plan:', plan);
-    setCurrentView('dashboard');
-  };
-
-  const handleStayFree = () => {
-    setCurrentView('dashboard');
-  };
+  // Handle mobile view changes
+  useEffect(() => {
+    if (isMobile && user) {
+      if (mobileView === 'contacts') {
+        setCurrentView('mobile-contacts');
+      } else {
+        setCurrentView('mobile-library');
+      }
+    }
+  }, [mobileView, isMobile, user]);
 
   const handleChatClick = (contact: AIContact) => {
     setSelectedContact(contact);
+    setMessages([]);
+    setConversationDocuments([]);
     setCurrentView('chat');
-    // Load messages for this contact
-    loadMessages(contact.id);
   };
 
   const handleCallClick = (contact: AIContact) => {
@@ -185,37 +267,6 @@ export default function App() {
     setCurrentView('chat');
   };
 
-  const handleBackFromChat = () => {
-    setCurrentView('dashboard');
-    setSelectedContact(null);
-    setMessages([]);
-    setConversationDocuments([]);
-  };
-
-  const handleBackFromCall = () => {
-    setCurrentView('dashboard');
-    setSelectedContact(null);
-  };
-
-  const handleBackFromSettings = () => {
-    if (isCreatingAgent) {
-      // If we were creating an agent, go back to dashboard and reset creation state
-      setIsCreatingAgent(false);
-      setNewAgentData(null);
-      setCurrentView('dashboard');
-    } else {
-      setCurrentView('dashboard');
-    }
-    setSelectedContact(null);
-  };
-
-  const handleHomeClick = () => {
-    setCurrentView('dashboard');
-    setSelectedContact(null);
-    setMessages([]);
-    setConversationDocuments([]);
-  };
-
   const handleCreateAgent = () => {
     setIsCreatingAgent(true);
     setNewAgentData({
@@ -226,164 +277,70 @@ export default function App() {
       initials: 'AI',
       status: 'online',
       lastSeen: 'now',
-      integrations: [],
-      documents: [],
-      tags: [],
+      totalConversations: 0,
+      totalMessages: 0,
       isFavorite: false,
       sortOrder: 0,
-      totalConversations: 0,
-      totalMessages: 0
+      tags: []
     });
-    setCurrentView('settings');
+    setSelectedContact(null);
+    setCurrentView('create-agent');
   };
 
-  const handleCreateFromTemplate = async (template: AgentTemplate) => {
-    console.log('Creating agent from template:', template);
-    
+  const handleCreateFromTemplate = (template: AgentTemplate) => {
     setIsCreatingAgent(true);
     setNewAgentData({
       name: template.name,
       description: template.description,
       color: template.default_color,
-      voice: template.default_voice || 'Puck',
+      voice: template.default_voice,
       avatar: template.default_avatar_url,
       initials: template.name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2) || 'AI',
       status: 'online',
       lastSeen: 'now',
-      integrations: [],
-      documents: [],
-      tags: template.tags || [],
+      totalConversations: 0,
+      totalMessages: 0,
       isFavorite: false,
       sortOrder: 0,
-      totalConversations: 0,
-      totalMessages: 0
+      tags: template.tags || []
     });
-    setCurrentView('settings');
+    setSelectedContact(null);
+    setCurrentView('create-agent');
   };
 
-  const loadMessages = async (contactId: string) => {
+  const handleSaveAgent = async (agentData: AIContact) => {
     try {
-      console.log('Loading messages for contact:', contactId);
+      console.log('Saving agent:', agentData);
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
-      // Get the most recent conversation for this agent
-      const { data: conversations, error: convError } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('agent_id', contactId)
-        .eq('user_id', user?.id)
-        .order('last_message_at', { ascending: false })
-        .limit(1);
-
-      if (convError) {
-        console.error('Error loading conversations:', convError);
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        alert('You must be logged in to save an agent');
         return;
       }
-
-      if (!conversations || conversations.length === 0) {
-        console.log('No conversations found for this agent');
-        setMessages([]);
-        setConversationDocuments([]);
-        return;
-      }
-
-      const conversationId = conversations[0].id;
-      console.log('Loading messages for conversation:', conversationId);
-
-      // Load messages for this conversation
-      const { data: messagesData, error: messagesError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('timestamp', { ascending: true });
-
-      if (messagesError) {
-        console.error('Error loading messages:', messagesError);
-        return;
-      }
-
-      const transformedMessages: Message[] = (messagesData || []).map(msg => ({
-        id: msg.id,
-        content: msg.content,
-        sender: msg.sender as 'user' | 'ai',
-        timestamp: new Date(msg.timestamp),
-        contactId: contactId
-      }));
-
-      console.log('Loaded messages:', transformedMessages);
-      setMessages(transformedMessages);
-
-      // TODO: Load conversation documents
-      setConversationDocuments([]);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    }
-  };
-
-  const handleSendMessage = async (content: string, documents?: DocumentInfo[]) => {
-    if (!selectedContact || !user) return;
-
-    try {
-      console.log('Sending message:', content);
-      
-      // Add user message immediately
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        content,
-        sender: 'user',
-        timestamp: new Date(),
-        contactId: selectedContact.id,
-        attachments: documents
-      };
-
-      setMessages(prev => [...prev, userMessage]);
-
-      // Add documents to conversation documents if provided
-      if (documents && documents.length > 0) {
-        setConversationDocuments(prev => [...prev, ...documents]);
-      }
-
-      // Simulate AI response (replace with actual AI integration)
-      setTimeout(() => {
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: `I understand you said: "${content}". This is a simulated response. In the full implementation, this would be processed by the AI service with access to the agent's knowledge base and integrations.`,
-          sender: 'ai',
-          timestamp: new Date(),
-          contactId: selectedContact.id
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      }, 1000);
-
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  };
-
-  const handleSaveContact = async (contact: AIContact) => {
-    try {
-      console.log('Saving contact:', contact);
 
       if (isCreatingAgent) {
-        // Creating a new agent
-        const { data, error } = await supabase
+        // Create new agent
+        const { data: newAgent, error } = await supabase
           .from('user_agents')
           .insert({
-            user_id: user?.id,
-            name: contact.name,
-            description: contact.description,
-            initials: contact.initials,
-            color: contact.color,
-            voice: contact.voice,
-            avatar_url: contact.avatar,
-            status: contact.status,
-            last_seen: contact.lastSeen,
-            personality_prompt: contact.personalityPrompt,
-            system_instructions: contact.systemInstructions,
-            custom_settings: contact.customSettings || {},
-            folder: contact.folder,
-            tags: contact.tags || [],
-            is_favorite: contact.isFavorite || false,
-            sort_order: contact.sortOrder || 0
+            user_id: user.id,
+            name: agentData.name,
+            description: agentData.description,
+            initials: agentData.initials,
+            color: agentData.color,
+            voice: agentData.voice,
+            avatar_url: agentData.avatar,
+            status: agentData.status,
+            last_seen: agentData.lastSeen,
+            personality_prompt: agentData.personalityPrompt,
+            system_instructions: agentData.systemInstructions,
+            custom_settings: agentData.customSettings,
+            folder: agentData.folder,
+            tags: agentData.tags,
+            is_favorite: agentData.isFavorite,
+            sort_order: agentData.sortOrder
           })
           .select()
           .single();
@@ -394,45 +351,41 @@ export default function App() {
           return;
         }
 
-        console.log('Agent created successfully:', data);
+        console.log('Agent created successfully:', newAgent);
         
-        // Add to contacts list
+        // Add to local state
         const newContact: AIContact = {
-          ...contact,
-          id: data.id,
-          createdAt: new Date(data.created_at),
-          updatedAt: new Date(data.updated_at)
+          ...agentData,
+          id: newAgent.id
         };
         
         setContacts(prev => [newContact, ...prev]);
-        
-        // Reset creation state
         setIsCreatingAgent(false);
         setNewAgentData(null);
-        setCurrentView('dashboard');
+        setCurrentView(isMobile ? 'mobile-contacts' : 'dashboard');
       } else {
-        // Updating existing agent
+        // Update existing agent
         const { error } = await supabase
           .from('user_agents')
           .update({
-            name: contact.name,
-            description: contact.description,
-            initials: contact.initials,
-            color: contact.color,
-            voice: contact.voice,
-            avatar_url: contact.avatar,
-            status: contact.status,
-            last_seen: contact.lastSeen,
-            personality_prompt: contact.personalityPrompt,
-            system_instructions: contact.systemInstructions,
-            custom_settings: contact.customSettings || {},
-            folder: contact.folder,
-            tags: contact.tags || [],
-            is_favorite: contact.isFavorite || false,
-            sort_order: contact.sortOrder || 0,
+            name: agentData.name,
+            description: agentData.description,
+            initials: agentData.initials,
+            color: agentData.color,
+            voice: agentData.voice,
+            avatar_url: agentData.avatar,
+            status: agentData.status,
+            last_seen: agentData.lastSeen,
+            personality_prompt: agentData.personalityPrompt,
+            system_instructions: agentData.systemInstructions,
+            custom_settings: agentData.customSettings,
+            folder: agentData.folder,
+            tags: agentData.tags,
+            is_favorite: agentData.isFavorite,
+            sort_order: agentData.sortOrder,
             updated_at: new Date().toISOString()
           })
-          .eq('id', contact.id);
+          .eq('id', agentData.id);
 
         if (error) {
           console.error('Error updating agent:', error);
@@ -442,52 +395,152 @@ export default function App() {
 
         console.log('Agent updated successfully');
         
-        // Update contacts list
-        setContacts(prev => prev.map(c => c.id === contact.id ? contact : c));
-        setSelectedContact(contact);
+        // Update local state
+        setContacts(prev => prev.map(contact => 
+          contact.id === agentData.id ? agentData : contact
+        ));
+        
+        if (selectedContact?.id === agentData.id) {
+          setSelectedContact(agentData);
+        }
       }
     } catch (error) {
-      console.error('Error saving contact:', error);
+      console.error('Error saving agent:', error);
       alert('An unexpected error occurred. Please try again.');
     }
   };
 
-  const handleDeleteContact = async (contactId: string) => {
+  const handleDeleteAgent = (contactId: string) => {
+    // Remove from local state
+    setContacts(prev => prev.filter(contact => contact.id !== contactId));
+    
+    // Clear selected contact if it was deleted
+    if (selectedContact?.id === contactId) {
+      setSelectedContact(null);
+    }
+    
+    // Navigate back to appropriate view
+    setCurrentView(isMobile ? 'mobile-contacts' : 'dashboard');
+  };
+
+  const handleSendMessage = async (content: string, attachedDocuments?: DocumentInfo[]) => {
+    if (!selectedContact) return;
+
+    // Add user message
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content,
+      sender: 'user',
+      timestamp: new Date(),
+      contactId: selectedContact.id,
+      attachments: attachedDocuments
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    // Add attached documents to conversation context
+    if (attachedDocuments && attachedDocuments.length > 0) {
+      setConversationDocuments(prev => [...prev, ...attachedDocuments]);
+    }
+
     try {
-      console.log('Deleting contact:', contactId);
+      // Prepare context for AI
+      const allDocuments = [
+        ...(selectedContact.documents || []),
+        ...conversationDocuments,
+        ...(attachedDocuments || [])
+      ];
 
-      const { error } = await supabase
-        .from('user_agents')
-        .delete()
-        .eq('id', contactId);
-
-      if (error) {
-        console.error('Error deleting agent:', error);
-        alert('Failed to delete agent. Please try again.');
-        return;
+      // Get integration data if available
+      let integrationContext = '';
+      if (selectedContact.integrations) {
+        for (const integration of selectedContact.integrations) {
+          if (integration.status === 'active') {
+            try {
+              const integrationDef = getIntegrationById(integration.integrationId);
+              if (integrationDef) {
+                const data = await integrationsService.executeIntegration(integrationDef, integration.config);
+                integrationContext += `\n\n${integrationDef.name} Data:\n${JSON.stringify(data, null, 2)}`;
+              }
+            } catch (error) {
+              console.error(`Error executing integration ${integration.integrationId}:`, error);
+            }
+          }
+        }
       }
 
-      console.log('Agent deleted successfully');
+      // Build context from documents
+      const documentContext = documentContextService.buildContext(allDocuments);
       
-      // Remove from contacts list
-      setContacts(prev => prev.filter(c => c.id !== contactId));
-      
-      // If this was the selected contact, clear selection
-      if (selectedContact?.id === contactId) {
-        setSelectedContact(null);
-        setCurrentView('dashboard');
-      }
+      // Prepare the full context
+      const fullContext = `
+${selectedContact.personalityPrompt ? `Personality: ${selectedContact.personalityPrompt}\n` : ''}
+${selectedContact.systemInstructions ? `Instructions: ${selectedContact.systemInstructions}\n` : ''}
+${documentContext ? `Available Documents:\n${documentContext}\n` : ''}
+${integrationContext ? `Live Data:${integrationContext}\n` : ''}
+
+Previous conversation:
+${messages.map(m => `${m.sender}: ${m.content}`).join('\n')}
+
+User: ${content}
+AI:`;
+
+      // Get AI response
+      const aiResponse = await geminiService.generateResponse(fullContext);
+
+      // Add AI message
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: aiResponse,
+        sender: 'ai',
+        timestamp: new Date(),
+        contactId: selectedContact.id
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
     } catch (error) {
-      console.error('Error deleting contact:', error);
-      alert('An unexpected error occurred. Please try again.');
+      console.error('Error generating AI response:', error);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: 'Sorry, I encountered an error while processing your message. Please try again.',
+        sender: 'ai',
+        timestamp: new Date(),
+        contactId: selectedContact.id
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
-  const toggleSidebar = () => {
+  const handleBack = () => {
+    if (isCreatingAgent) {
+      setIsCreatingAgent(false);
+      setNewAgentData(null);
+    }
+    
+    if (isMobile) {
+      setCurrentView(mobileView === 'contacts' ? 'mobile-contacts' : 'mobile-library');
+    } else {
+      setCurrentView('dashboard');
+    }
+  };
+
+  const handleToggleSidebar = () => {
     setShowSidebar(!showSidebar);
   };
 
-  // Show loading screen while auth is loading
+  const handleCloseSidebar = () => {
+    if (isCreatingAgent) {
+      setIsCreatingAgent(false);
+      setNewAgentData(null);
+      setCurrentView(isMobile ? 'mobile-library' : 'dashboard');
+    }
+  };
+
+  // Show loading screen while checking auth
   if (authLoading) {
     return (
       <div className="min-h-screen bg-glass-bg flex items-center justify-center">
@@ -499,265 +552,209 @@ export default function App() {
     );
   }
 
-  // Show error if there's an error loading agents
-  if (error) {
-    return (
-      <div className="min-h-screen bg-glass-bg flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto p-6">
-          <div className="text-red-400 mb-4">⚠️</div>
-          <h2 className="text-white text-xl font-semibold mb-2">Something went wrong</h2>
-          <p className="text-slate-400 mb-4">{error}</p>
-          <button
-            onClick={() => {
-              setError(null);
-              loadUserAgents();
-            }}
-            className="px-4 py-2 bg-[#186799] hover:bg-[#1a5a7a] text-white rounded-lg transition-colors duration-200"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // Router for handling URL-based navigation
   return (
     <Router>
       <Routes>
         <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
         <Route path="/success" element={<SuccessPage />} />
         <Route path="/*" element={
-          <div className="h-screen bg-glass-bg overflow-hidden">
-            {/* Mobile Layout */}
-            {isMobile ? (
-              <>
-                {currentView === 'landing' && (
-                  <LandingPage onGetStarted={handleGetStarted} onSignUp={handleSignUp} />
-                )}
-                {currentView === 'signup' && (
-                  <SignupPage 
-                    onSuccess={handleAuthSuccess} 
-                    onBackToLanding={handleBackToLanding}
-                    onSignIn={handleSignIn}
+          <>
+            {/* Landing Page */}
+            {currentView === 'landing' && (
+              <LandingPage 
+                onGetStarted={() => setCurrentView('signup')}
+                onSignUp={() => setCurrentView('signup')}
+              />
+            )}
+
+            {/* Signup Page */}
+            {currentView === 'signup' && (
+              <SignupPage 
+                onSuccess={() => setCurrentView(isMobile ? 'mobile-library' : 'dashboard')}
+                onBackToLanding={() => setCurrentView('landing')}
+                onSignIn={() => setCurrentView('signin')}
+              />
+            )}
+
+            {/* Sign In Page */}
+            {currentView === 'signin' && (
+              <AuthScreen 
+                onSuccess={() => setCurrentView(isMobile ? 'mobile-library' : 'dashboard')}
+                onBackToLanding={() => setCurrentView('landing')}
+                onSignUp={() => setCurrentView('signup')}
+              />
+            )}
+
+            {/* Pricing Page */}
+            {currentView === 'pricing' && (
+              <PricingPage 
+                onSelectPlan={(plan) => console.log('Selected plan:', plan)}
+                onStayFree={() => setCurrentView(isMobile ? 'mobile-library' : 'dashboard')}
+              />
+            )}
+
+            {/* Mobile Views */}
+            {isMobile && currentView === 'mobile-contacts' && (
+              <div className="h-screen flex flex-col">
+                <MobileContactsScreen
+                  contacts={contacts}
+                  onChatClick={handleChatClick}
+                  onCallClick={handleCallClick}
+                  onCreateAgent={handleCreateAgent}
+                />
+                <MobileNavigation
+                  currentView="contacts"
+                  onViewChange={setMobileView}
+                  onCreateAgent={handleCreateAgent}
+                />
+              </div>
+            )}
+
+            {isMobile && currentView === 'mobile-library' && (
+              <div className="h-screen flex flex-col">
+                <MobileLibraryScreen
+                  contacts={contacts}
+                  onChatClick={handleChatClick}
+                  onCallClick={handleCallClick}
+                  onSettingsClick={handleSettingsClick}
+                  onCreateAgent={handleCreateAgent}
+                />
+                <MobileNavigation
+                  currentView="library"
+                  onViewChange={setMobileView}
+                  onCreateAgent={handleCreateAgent}
+                />
+              </div>
+            )}
+
+            {/* Desktop Views */}
+            {!isMobile && currentView === 'dashboard' && (
+              <div className="h-screen flex">
+                <div className="w-80 flex-shrink-0">
+                  <ContactSidebar
+                    contacts={contacts}
+                    onChatClick={handleChatClick}
+                    onCallClick={handleCallClick}
+                    onSettingsClick={handleSettingsClick}
+                    onHomeClick={() => setCurrentView('dashboard')}
+                    onCreateAgent={handleCreateAgent}
                   />
-                )}
-                {currentView === 'signin' && (
-                  <AuthScreen 
-                    mode="signin"
-                    onSuccess={handleAuthSuccess} 
-                    onSwitchMode={() => setCurrentView('signup')}
-                    onBackToLanding={handleBackToLanding}
+                </div>
+                <div className="flex-1">
+                  <Dashboard
+                    contacts={contacts}
+                    onChatClick={handleChatClick}
+                    onCallClick={handleCallClick}
+                    onSettingsClick={handleSettingsClick}
+                    onNewChatClick={handleNewChatClick}
+                    onCreateAgent={handleCreateAgent}
+                    onCreateFromTemplate={handleCreateFromTemplate}
                   />
-                )}
-                {currentView === 'pricing' && (
-                  <PricingPage onSelectPlan={handleSelectPlan} onStayFree={handleStayFree} />
-                )}
-                {(currentView === 'dashboard' && user) && (
-                  <>
-                    {mobileView === 'contacts' ? (
-                      <MobileContactsScreen
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    ) : (
-                      <MobileLibraryScreen
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    )}
-                    <MobileNavigation
-                      currentView={mobileView}
-                      onViewChange={setMobileView}
+                </div>
+              </div>
+            )}
+
+            {/* Chat View */}
+            {currentView === 'chat' && selectedContact && (
+              <div className="h-screen flex">
+                {!isMobile && (
+                  <div className="w-80 flex-shrink-0">
+                    <ContactSidebar
+                      contacts={contacts}
+                      onChatClick={handleChatClick}
+                      onCallClick={handleCallClick}
+                      onSettingsClick={handleSettingsClick}
+                      onHomeClick={() => setCurrentView('dashboard')}
                       onCreateAgent={handleCreateAgent}
                     />
-                  </>
+                  </div>
                 )}
-                {currentView === 'chat' && selectedContact && (
+                <div className="flex-1 relative">
                   <ChatScreen
                     contact={selectedContact}
                     messages={messages}
                     conversationDocuments={conversationDocuments}
-                    onBack={handleBackFromChat}
+                    onBack={handleBack}
                     onSendMessage={handleSendMessage}
                     onSettingsClick={handleSettingsClick}
                     onNewChatClick={handleNewChatClick}
                     onCallClick={handleCallClick}
-                    showSidebar={false}
+                    showSidebar={showSidebar}
+                    onToggleSidebar={handleToggleSidebar}
                   />
-                )}
-                {currentView === 'call' && selectedContact && (
-                  <CallScreen
-                    contact={selectedContact}
-                    onBack={handleBackFromCall}
-                  />
-                )}
-                {currentView === 'settings' && (
-                  <SettingsScreen
-                    contact={isCreatingAgent && newAgentData ? { ...newAgentData, id: 'new' } as AIContact : selectedContact!}
-                    onBack={handleBackFromSettings}
-                    onSave={handleSaveContact}
-                    onDelete={!isCreatingAgent ? handleDeleteContact : undefined}
-                  />
-                )}
-              </>
-            ) : (
-              /* Desktop Layout */
-              <>
-                {currentView === 'landing' && (
-                  <LandingPage onGetStarted={handleGetStarted} onSignUp={handleSignUp} />
-                )}
-                {currentView === 'signup' && (
-                  <SignupPage 
-                    onSuccess={handleAuthSuccess} 
-                    onBackToLanding={handleBackToLanding}
-                    onSignIn={handleSignIn}
-                  />
-                )}
-                {currentView === 'signin' && (
-                  <AuthScreen 
-                    mode="signin"
-                    onSuccess={handleAuthSuccess} 
-                    onSwitchMode={() => setCurrentView('signup')}
-                    onBackToLanding={handleBackToLanding}
-                  />
-                )}
-                {currentView === 'pricing' && (
-                  <PricingPage onSelectPlan={handleSelectPlan} onStayFree={handleStayFree} />
-                )}
-                {(currentView === 'dashboard' && user) && (
-                  <div className="flex h-full">
-                    {/* Left Sidebar - Contacts */}
-                    <div className="w-80 border-r border-slate-700 bg-glass-panel glass-effect">
-                      <ContactSidebar
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onHomeClick={handleHomeClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    </div>
-                    
-                    {/* Main Content */}
-                    <div className="flex-1">
-                      <Dashboard
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onNewChatClick={handleNewChatClick}
-                        onCreateAgent={handleCreateAgent}
-                        onCreateFromTemplate={handleCreateFromTemplate}
-                      />
-                    </div>
+                </div>
+                {!isMobile && showSidebar && (
+                  <div className="w-80 flex-shrink-0">
+                    <SettingsSidebar
+                      contact={selectedContact}
+                      onSave={handleSaveAgent}
+                      onDelete={handleDeleteAgent}
+                    />
                   </div>
                 )}
-                {currentView === 'chat' && selectedContact && (
-                  <div className="flex h-full">
-                    {/* Left Sidebar - Contacts */}
-                    <div className="w-80 border-r border-slate-700 bg-glass-panel glass-effect">
-                      <ContactSidebar
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onHomeClick={handleHomeClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    </div>
-                    
-                    {/* Chat Content */}
-                    <div className="flex-1">
-                      <ChatScreen
-                        contact={selectedContact}
-                        messages={messages}
-                        conversationDocuments={conversationDocuments}
-                        onBack={handleBackFromChat}
-                        onSendMessage={handleSendMessage}
-                        onSettingsClick={handleSettingsClick}
-                        onNewChatClick={handleNewChatClick}
-                        onCallClick={handleCallClick}
-                        showSidebar={showSidebar}
-                        onToggleSidebar={toggleSidebar}
-                      />
-                    </div>
-                    
-                    {/* Right Sidebar - Settings */}
-                    {showSidebar && (
-                      <div className="w-80 border-l border-slate-700 bg-glass-panel glass-effect">
-                        <SettingsSidebar
-                          contact={selectedContact}
-                          onSave={handleSaveContact}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-                {currentView === 'call' && selectedContact && (
-                  <div className="flex h-full">
-                    {/* Left Sidebar - Contacts */}
-                    <div className="w-80 border-r border-slate-700 bg-glass-panel glass-effect">
-                      <ContactSidebar
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onHomeClick={handleHomeClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    </div>
-                    
-                    {/* Call Content */}
-                    <div className="flex-1">
-                      <CallScreen
-                        contact={selectedContact}
-                        onBack={handleBackFromCall}
-                      />
-                    </div>
-                  </div>
-                )}
-                {currentView === 'settings' && (
-                  <div className="flex h-full">
-                    {/* Left Sidebar - Contacts */}
-                    <div className="w-80 border-r border-slate-700 bg-glass-panel glass-effect">
-                      <ContactSidebar
-                        contacts={contacts}
-                        onChatClick={handleChatClick}
-                        onCallClick={handleCallClick}
-                        onSettingsClick={handleSettingsClick}
-                        onHomeClick={handleHomeClick}
-                        onCreateAgent={handleCreateAgent}
-                      />
-                    </div>
-                    
-                    {/* Settings Content */}
-                    <div className="flex-1">
-                      <SettingsScreen
-                        contact={isCreatingAgent && newAgentData ? { ...newAgentData, id: 'new' } as AIContact : selectedContact!}
-                        onBack={handleBackFromSettings}
-                        onSave={handleSaveContact}
-                        onDelete={!isCreatingAgent ? handleDeleteContact : undefined}
-                      />
-                    </div>
-                    
-                    {/* Right Sidebar - Settings (always show during agent creation/editing) */}
-                    <div className="w-80 border-l border-slate-700 bg-glass-panel glass-effect">
-                      <SettingsSidebar
-                        contact={isCreatingAgent && newAgentData ? { ...newAgentData, id: 'new' } as AIContact : selectedContact}
-                        onSave={handleSaveContact}
-                        onClose={handleBackFromSettings}
-                      />
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
-          </div>
+
+            {/* Call View */}
+            {currentView === 'call' && selectedContact && (
+              <div className="h-screen">
+                <CallScreen
+                  contact={selectedContact}
+                  onBack={handleBack}
+                />
+              </div>
+            )}
+
+            {/* Settings View */}
+            {currentView === 'settings' && selectedContact && (
+              <SettingsScreen
+                contact={selectedContact}
+                onBack={handleBack}
+                onSave={handleSaveAgent}
+                onDelete={handleDeleteAgent}
+              />
+            )}
+
+            {/* Create Agent View */}
+            {currentView === 'create-agent' && (
+              <div className="h-screen flex">
+                {!isMobile && (
+                  <div className="w-80 flex-shrink-0">
+                    <ContactSidebar
+                      contacts={contacts}
+                      onChatClick={handleChatClick}
+                      onCallClick={handleCallClick}
+                      onSettingsClick={handleSettingsClick}
+                      onHomeClick={() => setCurrentView('dashboard')}
+                      onCreateAgent={handleCreateAgent}
+                    />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <Dashboard
+                    contacts={contacts}
+                    onChatClick={handleChatClick}
+                    onCallClick={handleCallClick}
+                    onSettingsClick={handleSettingsClick}
+                    onNewChatClick={handleNewChatClick}
+                    onCreateAgent={handleCreateAgent}
+                    onCreateFromTemplate={handleCreateFromTemplate}
+                  />
+                </div>
+                {!isMobile && (
+                  <div className="w-80 flex-shrink-0">
+                    <SettingsSidebar
+                      contact={newAgentData as AIContact}
+                      onSave={handleSaveAgent}
+                      onClose={handleCloseSidebar}
+                      onDelete={handleDeleteAgent}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         } />
       </Routes>
     </Router>
