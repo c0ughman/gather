@@ -34,6 +34,9 @@ export default function App() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [templateToCreate, setTemplateToCreate] = useState<AgentTemplate | null>(null);
+  const [contacts, setContacts] = useState<AIContact[]>([]);
+  const [callState, setCallState] = useState<CallState>({ isActive: false, isMuted: false });
+  const [oauthMessage, setOauthMessage] = useState<string>('');
 
   // Load user's agents from Supabase
   useEffect(() => {
@@ -277,8 +280,50 @@ export default function App() {
     setSelectedContact(null);
   };
 
-  const handleCreateAgent = () => {
-    setCurrentView('create-agent');
+  const handleGetStarted = () => {
+    setCurrentView('signup');
+  };
+
+  const handleSignUp = () => {
+    setCurrentView('signup');
+  };
+
+  const handleSignIn = () => {
+    setCurrentView('login');
+  };
+
+  const handleBackToLanding = () => {
+    setCurrentView('landing');
+  };
+
+  const handleSignupSuccess = () => {
+    setCurrentView('pricing');
+  };
+
+  const handleSelectPlan = () => {
+    setCurrentView('dashboard');
+  };
+
+  const handleStayFree = () => {
+    setCurrentView('dashboard');
+  };
+
+  const handleNewChatClick = () => {
+    setMessages([]);
+    setConversationDocuments([]);
+  };
+
+  const handleEndCall = () => {
+    setCallState({ isActive: false, isMuted: false });
+    setCurrentView('chat');
+  };
+
+  const handleToggleMute = () => {
+    setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
+  };
+
+  const handleSaveContact = (contact: AIContact) => {
+    handleSaveAgent(contact);
   };
 
   // Mobile-specific handlers
@@ -451,7 +496,7 @@ export default function App() {
                   <SettingsScreen
                     contact={selectedContact}
                     onBack={handleMobileBack}
-                    onSave={handleSaveContact}
+                    onSave={handleSaveAgent}
                   />
                 ) : currentView === 'create-agent' ? (
                   /* Mobile Create Agent Screen */
@@ -468,7 +513,7 @@ export default function App() {
                     }}
                     onBack={handleMobileBack}
                     onSave={(contact) => {
-                      handleSaveContact(contact);
+                      handleSaveAgent(contact);
                       setCurrentView('dashboard');
                       setMobileView('contacts');
                     }}
@@ -495,8 +540,6 @@ export default function App() {
                           onCreateAgent={handleCreateAgent}
                         />
                       )}
-                      
-
                     </div>
                     
                     {/* Mobile Bottom Navigation */}
@@ -568,7 +611,7 @@ export default function App() {
                       <SettingsScreen
                         contact={selectedContact}
                         onBack={handleBack}
-                        onSave={handleSaveContact}
+                        onSave={handleSaveAgent}
                       />
                     )}
                     
@@ -586,7 +629,7 @@ export default function App() {
                         }}
                         onBack={handleBack}
                         onSave={(contact) => {
-                          handleSaveContact(contact);
+                          handleSaveAgent(contact);
                           setCurrentView('dashboard');
                         }}
                       />
@@ -598,7 +641,7 @@ export default function App() {
                     <div className="w-80 border-l border-slate-700">
                       <SettingsSidebar
                         contact={selectedContact}
-                        onSave={handleSaveContact}
+                        onSave={handleSaveAgent}
                         onClose={handleToggleSidebar}
                       />
                     </div>
