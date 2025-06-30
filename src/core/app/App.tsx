@@ -1,29 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from '../modules/auth/hooks/useAuth';
+import { useAuth } from '../../modules/auth/hooks/useAuth';
 import { AIContact, Message } from './types/types';
-import { DocumentInfo } from '../modules/fileManagement/types/documents';
-import { documentContextService } from '../modules/fileManagement/services/documentContextService';
-import { geminiService } from '../modules/fileManagement/services/geminiService';
-import { integrationsService } from '../modules/integrations/core/integrationsService';
-import { getIntegrationById } from '../modules/integrations/data/integrations';
-import { supabase } from '../modules/database/lib/supabase';
+import { DocumentInfo } from '../../modules/fileManagement/types/documents';
+import { documentContextService } from '../../modules/fileManagement/services/documentContextService';
+import { geminiService } from '../../modules/fileManagement/services/geminiService';
+import { integrationsService } from '../../modules/integrations/core/integrationsService';
+import { getIntegrationById } from '../../modules/integrations/data/integrations';
+import { supabase } from '../../modules/database/lib/supabase';
 
 // Import components
-import AuthScreen from '../modules/auth/components/AuthScreen';
-import CallScreen from '../modules/voice/components/CallScreen';
-import { ChatScreen } from '../modules/chat';
-import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen } from '../modules/ui';
-import LandingPage from '../components/LandingPage';
-import SignupPage from '../components/SignupPage';
-import PricingPage from '../components/PricingPage';
-import SuccessPage from '../components/SuccessPage';
-import OAuthCallback from '../modules/oauth/components/OAuthCallback';
+import AuthScreen from '../../modules/auth/components/AuthScreen';
+import CallScreen from '../../modules/voice/components/CallScreen';
+import { ChatScreen } from '../../modules/chat';
+import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen } from '../../modules/ui';
+import LandingPage from '../../components/LandingPage';
+import SignupPage from '../../components/SignupPage';
+import PricingPage from '../../components/PricingPage';
+import SuccessPage from '../../components/SuccessPage';
+import OAuthCallback from '../../modules/oauth/components/OAuthCallback';
 
 // Mobile components
-import MobileContactsScreen from '../modules/ui/components/MobileContactsScreen';
-import MobileLibraryScreen from '../modules/ui/components/MobileLibraryScreen';
-import MobileNavigation from '../modules/ui/components/MobileNavigation';
+import MobileContactsScreen from '../../modules/ui/components/MobileContactsScreen';
+import MobileLibraryScreen from '../../modules/ui/components/MobileLibraryScreen';
+import MobileNavigation from '../../modules/ui/components/MobileNavigation';
 
 // Hook to detect mobile
 function useMobile() {
