@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Save, Palette, User, FileText, Settings as SettingsIcon, Upload, Trash2, Plus, Database, Volume2, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Palette, User, FileText, Settings as SettingsIcon, Upload, Trash2, Plus, Database, Volume2, ChevronDown, ChevronRight, AlertTriangle, X } from 'lucide-react';
 import { AIContact } from '../../../core/types/types';
 import { DocumentInfo } from '../../fileManagement/types/documents';
 import { Integration, IntegrationConfig, IntegrationInstance } from '../../integrations/types/integrations';
@@ -7,11 +7,13 @@ import DocumentUpload, { DocumentList } from './DocumentUpload';
 import IntegrationsLibrary from './IntegrationsLibrary';
 import IntegrationSetup from './IntegrationSetup';
 import { getIntegrationById } from '../../integrations/data/integrations';
+import { supabase } from '../../database/lib/supabase';
 
 interface SettingsScreenProps {
   contact: AIContact;
   onBack: () => void;
   onSave: (contact: AIContact) => void;
+  onDelete?: (contactId: string) => void;
 }
 
 const availableColors = [
@@ -39,7 +41,95 @@ const availableVoices = [
   { id: 'Zephyr', name: 'Zephyr', description: 'Light and airy', gender: 'Female' }
 ];
 
-export default function SettingsScreen({ contact, onBack, onSave }: SettingsScreenProps) {
+// Delete Confirmation Modal Component
+interface DeleteConfirmationModalProps {
+  agentName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isDeleting: boolean;
+}
+
+function DeleteConfirmationModal({ agentName, onConfirm, onCancel, isDeleting }: DeleteConfirmationModalProps) {
+  const [confirmationText, setConfirmationText] = useState('');
+  const isConfirmationValid = confirmationText === agentName;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-md w-full p-6">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-12 h-12 bg-red-900/30 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6 text-red-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Delete Agent</h3>
+            <p className="text-slate-400 text-sm">This action cannot be undone</p>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-slate-300 mb-4">
+            You are about to permanently delete <strong className="text-white">"{agentName}"</strong> and all associated data including:
+          </p>
+          <ul className="text-slate-400 text-sm space-y-1 mb-4">
+            <li>• All conversations and messages</li>
+            <li>• Uploaded documents and files</li>
+            <li>• Integration configurations</li>
+            <li>• Custom settings and preferences</li>
+          </ul>
+          <p className="text-red-400 text-sm font-medium">
+            This action is permanent and cannot be reversed.
+          </p>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-white mb-2">
+            Type the agent name to confirm deletion:
+          </label>
+          <input
+            type="text"
+            value={confirmationText}
+            onChange={(e) => setConfirmationText(e.target.value)}
+            placeholder={agentName}
+            className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg border border-slate-600 focus:border-red-500 focus:outline-none transition-colors duration-200"
+            disabled={isDeleting}
+          />
+          <p className="text-slate-500 text-xs mt-1">
+            Type "{agentName}" exactly as shown above
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!isConfirmationValid || isDeleting}
+            className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+          >
+            {isDeleting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <span>Deleting...</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Agent</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function SettingsScreen({ contact, onBack, onSave, onDelete }: SettingsScreenProps) {
   const [formData, setFormData] = useState({
     name: contact.name,
     description: contact.description,
@@ -58,6 +148,11 @@ export default function SettingsScreen({ contact, onBack, onSave }: SettingsScre
   const [showIntegrationsLibrary, setShowIntegrationsLibrary] = useState(false);
   const [setupIntegration, setSetupIntegration] = useState<Integration | null>(null);
   const [editingIntegration, setEditingIntegration] = useState<IntegrationInstance | null>(null);
+
+  // Danger zone state
+  const [showDangerZone, setShowDangerZone] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -143,6 +238,41 @@ export default function SettingsScreen({ contact, onBack, onSave }: SettingsScre
     
     onSave(updatedContact);
     setHasChanges(false);
+  };
+
+  const handleDeleteAgent = async () => {
+    try {
+      setIsDeleting(true);
+      console.log(`Deleting agent: ${contact.id}`);
+
+      // Delete from Supabase
+      const { error } = await supabase
+        .from('user_agents')
+        .delete()
+        .eq('id', contact.id);
+
+      if (error) {
+        console.error('Error deleting agent:', error);
+        alert('Failed to delete agent. Please try again.');
+        return;
+      }
+
+      console.log('Agent deleted successfully');
+      
+      // Call the onDelete callback if provided
+      if (onDelete) {
+        onDelete(contact.id);
+      }
+      
+      // Close modal and go back
+      setShowDeleteModal(false);
+      onBack();
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleColorSelect = (color: string) => {
@@ -248,6 +378,16 @@ export default function SettingsScreen({ contact, onBack, onSave }: SettingsScre
 
   return (
     <div className="h-screen bg-glass-bg flex flex-col">
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <DeleteConfirmationModal
+          agentName={contact.name}
+          onConfirm={handleDeleteAgent}
+          onCancel={() => setShowDeleteModal(false)}
+          isDeleting={isDeleting}
+        />
+      )}
+
       {/* Header */}
       <div className="bg-glass-panel glass-effect border-b border-slate-700 p-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center space-x-4">
@@ -615,6 +755,42 @@ export default function SettingsScreen({ contact, onBack, onSave }: SettingsScre
                       <Upload className="w-12 h-12 mx-auto mb-3 opacity-50" />
                       <p>No documents uploaded yet</p>
                       <p className="text-sm">Upload files to enhance this AI's knowledge base</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Danger Zone */}
+                <div className="bg-red-900/10 border border-red-700/30 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setShowDangerZone(!showDangerZone)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-red-900/20 transition-colors duration-200"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                      <span className="text-red-400 font-medium">Danger Zone</span>
+                    </div>
+                    {showDangerZone ? (
+                      <ChevronDown className="w-4 h-4 text-red-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-red-400" />
+                    )}
+                  </button>
+                  
+                  {showDangerZone && (
+                    <div className="px-4 pb-4 border-t border-red-700/30">
+                      <div className="pt-4">
+                        <h3 className="text-red-400 font-medium mb-2">Delete Agent</h3>
+                        <p className="text-slate-400 text-sm mb-4">
+                          Permanently delete this agent and all associated data. This action cannot be undone.
+                        </p>
+                        <button
+                          onClick={() => setShowDeleteModal(true)}
+                          className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors duration-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Delete Agent</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
