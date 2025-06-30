@@ -9,6 +9,23 @@ import { AIContact } from '../../../core/types/types';
 import { sourceIntegrations, actionIntegrations } from '../../integrations/data/integrations';
 import { useAuth } from '../../auth/hooks/useAuth';
 import { SubscriptionBadge, ManageSubscriptionButton } from '../../payments';
+import { supabase } from '../../database/lib/supabase';
+
+interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  default_color: string;
+  default_voice: string;
+  default_avatar_url?: string;
+  personality_traits: string[];
+  capabilities: string[];
+  suggested_integrations: string[];
+  tags: string[];
+  is_featured: boolean;
+  is_active: boolean;
+}
 
 interface DashboardProps {
   contacts: AIContact[];
@@ -17,6 +34,7 @@ interface DashboardProps {
   onSettingsClick: (contact?: AIContact) => void;
   onNewChatClick: (contact: AIContact) => void;
   onCreateAgent: () => void;
+  onCreateFromTemplate?: (template: AgentTemplate) => void;
 }
 
 export default function Dashboard({ 
@@ -25,13 +43,43 @@ export default function Dashboard({
   onCallClick, 
   onSettingsClick,
   onNewChatClick,
-  onCreateAgent 
+  onCreateAgent,
+  onCreateFromTemplate
 }: DashboardProps) {
   const [agentSearchQuery, setAgentSearchQuery] = useState('');
   const [integrationSearchQuery, setIntegrationSearchQuery] = useState('');
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
   const { user, signOut } = useAuth();
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load agent templates from database
+  useEffect(() => {
+    const fetchAgentTemplates = async () => {
+      try {
+        setLoadingTemplates(true);
+        const { data, error } = await supabase
+          .from('agent_templates')
+          .select('*')
+          .eq('is_active', true)
+          .order('is_featured', { ascending: false })
+          .order('name');
+
+        if (error) {
+          console.error('Error fetching agent templates:', error);
+        } else {
+          setAgentTemplates(data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching agent templates:', error);
+      } finally {
+        setLoadingTemplates(false);
+      }
+    };
+
+    fetchAgentTemplates();
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -57,14 +105,15 @@ export default function Dashboard({
       .slice(0, 4);
   }, [contacts]);
   
-  // Filter agents for search
-  const filteredAgents = useMemo(() => {
-    if (!agentSearchQuery.trim()) return contacts;
-    return contacts.filter(contact => 
-      contact.name.toLowerCase().includes(agentSearchQuery.toLowerCase()) ||
-      contact.description.toLowerCase().includes(agentSearchQuery.toLowerCase())
+  // Filter agent templates for search
+  const filteredTemplates = useMemo(() => {
+    if (!agentSearchQuery.trim()) return agentTemplates;
+    return agentTemplates.filter(template => 
+      template.name.toLowerCase().includes(agentSearchQuery.toLowerCase()) ||
+      template.description.toLowerCase().includes(agentSearchQuery.toLowerCase()) ||
+      template.tags?.some(tag => tag.toLowerCase().includes(agentSearchQuery.toLowerCase()))
     );
-  }, [contacts, agentSearchQuery]);
+  }, [agentTemplates, agentSearchQuery]);
 
   // All integrations
   const allIntegrations = [...sourceIntegrations, ...actionIntegrations];
@@ -113,6 +162,12 @@ export default function Dashboard({
     const lightCompB = Math.round(compB + (255 - compB) * 0.8);
     
     return `radial-gradient(circle, rgb(${lightCompR}, ${lightCompG}, ${lightCompB}) 0%, ${color} 40%, rgba(${r}, ${g}, ${b}, 0.4) 50%, rgba(${r}, ${g}, ${b}, 0.1) 60%, rgba(0, 0, 0, 0) 70%)`;
+  };
+
+  const handleAddTemplate = (template: AgentTemplate) => {
+    if (onCreateFromTemplate) {
+      onCreateFromTemplate(template);
+    }
   };
 
   return (
@@ -195,8 +250,8 @@ export default function Dashboard({
                     <CheckCircle2 className="w-5 h-5 text-green-300" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-white">{contacts.length}</div>
-                    <div className="text-slate-400 text-sm">Total Agents</div>
+                    <div className="text-2xl font-bold text-white">{agentTemplates.length}</div>
+                    <div className="text-slate-400 text-sm">Templates</div>
                   </div>
                 </div>
               </div>
@@ -233,7 +288,7 @@ export default function Dashboard({
           <section>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-white">
-                {contacts.length === 0 ? 'Get Started' : 'Frequently Used'}
+                {contacts.length === 0 ? 'Get Started' : 'Your Agents'}
               </h2>
               {contacts.length > 0 && (
                 <button
@@ -253,7 +308,7 @@ export default function Dashboard({
                 </div>
                 <h3 className="text-2xl font-bold text-white mb-4">Create Your First AI Agent</h3>
                 <p className="text-slate-400 text-lg mb-6 max-w-md mx-auto">
-                  Start by creating a personalized AI assistant. Choose from our templates or build your own from scratch.
+                  Start by creating a personalized AI assistant. Choose from our templates below or build your own from scratch.
                 </p>
                 <button
                   onClick={onCreateAgent}
@@ -314,73 +369,103 @@ export default function Dashboard({
             )}
           </section>
 
-          {/* Agents Library */}
-          {contacts.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Agents Library</h2>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="Search agents..."
-                    value={agentSearchQuery}
-                    onChange={(e) => setAgentSearchQuery(e.target.value)}
-                    className="pl-10 pr-4 py-2 bg-glass-panel glass-effect border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:border-[#186799] focus:outline-none"
-                  />
-                </div>
+          {/* Agent Templates Library */}
+          <section>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Agent Templates</h2>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search templates..."
+                  value={agentSearchQuery}
+                  onChange={(e) => setAgentSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 bg-glass-panel glass-effect border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:border-[#186799] focus:outline-none"
+                />
               </div>
-              
+            </div>
+            
+            {loadingTemplates ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredAgents.map((agent) => (
-                  <div key={`library-${agent.id}`} className="bg-glass-panel glass-effect rounded-xl p-6 border border-slate-700 hover:border-slate-600 transition-all duration-200 group">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="bg-glass-panel glass-effect rounded-xl p-6 border border-slate-700 animate-pulse">
                     <div className="flex items-start space-x-4">
-                      <div className="w-16 h-16 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {agent.avatar ? (
-                          <img
-                            src={agent.avatar}
-                            alt={agent.name}
-                            className="w-full h-full object-cover rounded-xl"
-                          />
-                        ) : (
-                          <div 
-                            className="w-full h-full rounded-xl"
-                            style={{ background: createAgentGradient(agent.color) }}
-                          />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h3 className="font-semibold text-white">{agent.name}</h3>
-                        </div>
-                        <p className="text-slate-400 text-sm mb-4 line-clamp-2">{agent.description}</p>
-                        <div className="flex items-center space-x-2">
-                          <button 
-                            onClick={() => onChatClick(agent)}
-                            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-300 hover:text-white transition-colors"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => onCallClick(agent)}
-                            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-300 hover:text-white transition-colors"
-                          >
-                            <Mic className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => onSettingsClick(agent)}
-                            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-full text-slate-300 hover:text-white transition-colors"
-                          >
-                            <Sliders className="w-4 h-4" />
-                          </button>
-                        </div>
+                      <div className="w-16 h-16 bg-slate-600 rounded-xl"></div>
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-slate-600 rounded w-3/4"></div>
+                        <div className="h-3 bg-slate-600 rounded w-full"></div>
+                        <div className="h-3 bg-slate-600 rounded w-2/3"></div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredTemplates.map((template) => (
+                  <div key={template.id} className="bg-glass-panel glass-effect rounded-xl p-6 border border-slate-700 hover:border-slate-600 transition-all duration-200 group">
+                    <div className="flex items-start space-x-4">
+                      <div className="w-16 h-16 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {template.default_avatar_url ? (
+                          <img
+                            src={template.default_avatar_url}
+                            alt={template.name}
+                            className="w-full h-full object-cover rounded-xl"
+                          />
+                        ) : (
+                          <div 
+                            className="w-full h-full rounded-xl"
+                            style={{ background: createAgentGradient(template.default_color) }}
+                          />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <h3 className="font-semibold text-white">{template.name}</h3>
+                          {template.is_featured && (
+                            <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                          )}
+                        </div>
+                        <p className="text-slate-400 text-sm mb-4 line-clamp-2">{template.description}</p>
+                        
+                        {/* Tags */}
+                        <div className="flex flex-wrap gap-1 mb-4">
+                          {template.tags?.slice(0, 3).map(tag => (
+                            <span
+                              key={tag}
+                              className="text-xs px-2 py-1 bg-slate-600 text-slate-300 rounded-full"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {template.tags && template.tags.length > 3 && (
+                            <span className="text-xs px-2 py-1 bg-slate-600 text-slate-300 rounded-full">
+                              +{template.tags.length - 3}
+                            </span>
+                          )}
+                        </div>
+
+                        <button 
+                          onClick={() => handleAddTemplate(template)}
+                          className="w-full flex items-center justify-center space-x-2 p-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-colors duration-200 text-sm"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add to My Agents</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!loadingTemplates && filteredTemplates.length === 0 && (
+              <div className="text-center py-8">
+                <Bot className="w-12 h-12 text-slate-500 mx-auto mb-3" />
+                <p className="text-slate-400">No templates found matching your search</p>
+              </div>
+            )}
+          </section>
 
           {/* Integrations Library */}
           <section>

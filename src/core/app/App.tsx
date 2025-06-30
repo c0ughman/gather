@@ -29,95 +29,39 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>('landing');
   const [mobileView, setMobileView] = useState<MobileViewType>('contacts');
   const [selectedContact, setSelectedContact] = useState<AIContact | null>(null);
-  const [contacts, setContacts] = useState<AIContact[]>([]);
-  const [messages, setMessages] = useLocalStorage<Message[]>('gather-messages', []);
-  const [conversationDocuments, setConversationDocuments] = useState<Record<string, DocumentInfo[]>>({});
-  const [dataLoading, setDataLoading] = useState(false);
-  const [callState, setCallState] = useState<CallState>({
-    isActive: false,
-    duration: 0,
-    isMuted: false,
-    status: 'ended'
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationDocuments, setConversationDocuments] = useState<DocumentInfo[]>([]);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [oauthMessage, setOauthMessage] = useState<string | null>(null);
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
+  const [templateToCreate, setTemplateToCreate] = useState<AgentTemplate | null>(null);
 
-  // Update call duration
+  // Load user's agents from Supabase
   useEffect(() => {
-    let interval: number;
-    if (callState.isActive && callState.status === 'connected') {
-      interval = setInterval(() => {
-        setCallState(prev => ({ ...prev, duration: prev.duration + 1 }));
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [callState.isActive, callState.status]);
-
-  // Load user data when authenticated
-  useEffect(() => {
-    if (user && !dataLoading) {
-      loadUserData();
-    } else if (!user) {
-      setContacts([]);
-      setMessages([]);
-      setConversationDocuments({});
+    if (user) {
+      loadUserAgents();
     }
   }, [user]);
 
-  useEffect(() => {
-    if (user && (currentView === 'landing' || currentView === 'signup' || currentView === 'login')) {
-      setCurrentView('dashboard');
-    }
-  }, [user, currentView]);
-
-  // Handle OAuth success/error messages
-  useEffect(() => {
-    const handleLocationState = () => {
-      const state = window.history.state?.usr;
-      if (state?.oauthSuccess) {
-        setOauthMessage(`✅ ${state.provider} connected successfully!`);
-        // Mark as connected in localStorage for the OAuth component
-        if (user) {
-          localStorage.setItem(`oauth_connected_${state.provider}_${user.id}`, 'true');
-        }
-        // Clear the state
-        window.history.replaceState({}, '', window.location.pathname);
-        setTimeout(() => setOauthMessage(null), 5000);
-      } else if (state?.oauthError) {
-        setOauthMessage(`❌ OAuth error: ${state.error}`);
-        // Clear the state
-        window.history.replaceState({}, '', window.location.pathname);
-        setTimeout(() => setOauthMessage(null), 8000);
-      }
-    };
-
-    handleLocationState();
-  }, [user]);
-
-  const loadUserData = async () => {
-    if (!user || dataLoading) return;
+  const loadUserAgents = async () => {
+    if (!user) return;
 
     try {
-      setDataLoading(true);
-      console.log('🔄 Loading user data for:', user.email);
+      console.log('Loading user agents from Supabase...');
+      const { data, error } = await supabase
+        .from('user_agents')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      // Test database connection
-      const connectionOk = await supabaseService.testConnection();
-      if (!connectionOk) {
-        console.error('❌ Database connection failed');
-        // Continue with empty data for now
-        setContacts([]);
+      if (error) {
+        console.error('Error loading user agents:', error);
         return;
       }
 
-      console.log('✅ Database connection successful');
-
-      // Load user agents from Supabase
-      const userAgents = await supabaseService.getUserAgents(user.id);
-      console.log('📊 Loaded agents:', userAgents.length);
+      console.log(`Loaded ${data?.length || 0} agents from Supabase`);
 
       // Transform Supabase data to AIContact format
-      const transformedContacts: AIContact[] = userAgents.map((agent: any) => ({
+      const transformedContacts: AIContact[] = (data || []).map(agent => ({
         id: agent.id,
         name: agent.name,
         description: agent.description,
@@ -126,115 +70,159 @@ export default function App() {
         voice: agent.voice,
         avatar: agent.avatar_url,
         status: agent.status as 'online' | 'busy' | 'offline',
-        lastSeen: formatLastSeen(agent.last_seen, agent.last_used_at),
-        total_messages: agent.total_messages,
-        integrations: agent.agent_integrations?.map((integration: any) => ({
-          id: integration.id,
-          integrationId: integration.template_id,
-          name: integration.name,
-          config: integration.config,
-          status: integration.status
-        })),
-        documents: agent.agent_documents?.map((doc: any) => ({
-          id: doc.id,
-          name: doc.name,
-          type: doc.file_type,
-          size: doc.file_size,
-          uploadedAt: new Date(doc.uploaded_at),
-          content: doc.content || '',
-          summary: doc.summary,
-          extractedText: doc.extracted_text,
-          metadata: doc.metadata || {}
-        }))
+        lastSeen: agent.last_seen,
+        personalityPrompt: agent.personality_prompt,
+        systemInstructions: agent.system_instructions,
+        customSettings: agent.custom_settings,
+        folder: agent.folder,
+        tags: agent.tags,
+        isFavorite: agent.is_favorite,
+        sortOrder: agent.sort_order,
+        totalConversations: agent.total_conversations,
+        totalMessages: agent.total_messages,
+        lastUsedAt: agent.last_used_at ? new Date(agent.last_used_at) : undefined,
+        createdAt: new Date(agent.created_at),
+        updatedAt: new Date(agent.updated_at),
+        // These will be loaded separately if needed
+        integrations: undefined,
+        documents: undefined
       }));
 
       setContacts(transformedContacts);
-      
-      // Initialize integrations
-      transformedContacts.forEach(contact => {
-        if (contact.integrations) {
-          contact.integrations.forEach(integrationInstance => {
-            const integration = getIntegrationById(integrationInstance.integrationId);
-            if (integration && integrationInstance.config.enabled && integration.category !== 'action') {
-              integrationsService.startPeriodicExecution(
-                contact.id, 
-                integration, 
-                integrationInstance.config, 
-                (contactId, data) => {
-                  console.log(`Integration data updated for contact ${contactId}`);
-                }
-              );
-            }
-          });
-        }
-      });
-
-      console.log('✅ User data loaded successfully');
-
     } catch (error) {
-      console.error('❌ Error loading user data:', error);
-      // Set empty contacts on error
-      setContacts([]);
-    } finally {
-      setDataLoading(false);
+      console.error('Error loading user agents:', error);
     }
   };
 
-  const formatLastSeen = (lastSeen: string, lastUsedAt: string | null): string => {
-    if (lastSeen === 'now') return 'now';
-    
-    if (lastUsedAt) {
-      const lastUsed = new Date(lastUsedAt);
-      const now = new Date();
-      const diffMs = now.getTime() - lastUsed.getTime();
-      const diffMins = Math.floor(diffMs / (1000 * 60));
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const handleCreateFromTemplate = (template: AgentTemplate) => {
+    console.log('Creating agent from template:', template.name);
+    setTemplateToCreate(template);
+    setIsCreatingAgent(true);
+    setCurrentView('create-agent');
+  };
 
-      if (diffMins < 1) return 'now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-      return lastUsed.toLocaleDateString();
+  const handleCreateAgent = () => {
+    console.log('Creating new agent from scratch');
+    setTemplateToCreate(null);
+    setIsCreatingAgent(true);
+    setCurrentView('create-agent');
+  };
+
+  const handleSaveAgent = async (contact: AIContact) => {
+    try {
+      console.log('Saving agent:', contact.name);
+
+      if (isCreatingAgent) {
+        // Create new agent in Supabase
+        const { data, error } = await supabase
+          .from('user_agents')
+          .insert({
+            user_id: user?.id,
+            template_id: templateToCreate?.id || null,
+            name: contact.name,
+            description: contact.description,
+            initials: contact.initials,
+            color: contact.color,
+            voice: contact.voice,
+            avatar_url: contact.avatar,
+            status: contact.status || 'online',
+            last_seen: contact.lastSeen || 'now',
+            personality_prompt: contact.personalityPrompt,
+            system_instructions: contact.systemInstructions,
+            custom_settings: contact.customSettings || {},
+            folder: contact.folder,
+            tags: contact.tags || [],
+            is_favorite: contact.isFavorite || false,
+            sort_order: contact.sortOrder || 0,
+            total_conversations: 0,
+            total_messages: 0
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating agent:', error);
+          alert('Failed to create agent. Please try again.');
+          return;
+        }
+
+        console.log('Agent created successfully:', data);
+
+        // Add to local state
+        const newContact: AIContact = {
+          ...contact,
+          id: data.id,
+          createdAt: new Date(data.created_at),
+          updatedAt: new Date(data.updated_at)
+        };
+
+        setContacts(prev => [newContact, ...prev]);
+        setIsCreatingAgent(false);
+        setTemplateToCreate(null);
+        setCurrentView('dashboard');
+      } else {
+        // Update existing agent in Supabase
+        const { error } = await supabase
+          .from('user_agents')
+          .update({
+            name: contact.name,
+            description: contact.description,
+            initials: contact.initials,
+            color: contact.color,
+            voice: contact.voice,
+            avatar_url: contact.avatar,
+            personality_prompt: contact.personalityPrompt,
+            system_instructions: contact.systemInstructions,
+            custom_settings: contact.customSettings || {},
+            folder: contact.folder,
+            tags: contact.tags || [],
+            is_favorite: contact.isFavorite || false,
+            sort_order: contact.sortOrder || 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', contact.id);
+
+        if (error) {
+          console.error('Error updating agent:', error);
+          alert('Failed to update agent. Please try again.');
+          return;
+        }
+
+        console.log('Agent updated successfully');
+
+        // Update local state
+        setContacts(prev => prev.map(c => c.id === contact.id ? contact : c));
+        setSelectedContact(contact);
+      }
+    } catch (error) {
+      console.error('Error saving agent:', error);
+      alert('An unexpected error occurred. Please try again.');
     }
-
-    return lastSeen;
   };
 
-  const handleGetStarted = () => {
-    setCurrentView('signup');
+  const handleDeleteAgent = async (contactId: string) => {
+    try {
+      console.log('Deleting agent from App:', contactId);
+      
+      // Remove from local state
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+      
+      // Clear selected contact if it was the deleted one
+      if (selectedContact?.id === contactId) {
+        setSelectedContact(null);
+      }
+      
+      // Navigate back to dashboard
+      setCurrentView('dashboard');
+    } catch (error) {
+      console.error('Error handling agent deletion:', error);
+    }
   };
 
-  const handleSignUp = () => {
-    setCurrentView('signup');
-  };
-
-  const handleSignIn = () => {
-    setCurrentView('login');
-  };
-
-  const handleSignupSuccess = () => {
-    setCurrentView('pricing');
-  };
-
-  const handleBackToLanding = () => {
-    setCurrentView('landing');
-  };
-
-  const handleSelectPlan = (plan: string) => {
-    // Here you would implement the logic to set the user's plan
-    console.log(`Selected plan: ${plan}`);
-    // For now, just redirect to dashboard
-    setCurrentView('dashboard');
-  };
-
-  const handleStayFree = () => {
-    // User chooses to stay with the free plan
-    setCurrentView('dashboard');
-  };
-
-  const handleChatClick = async (contact: AIContact) => {
+  const handleChatClick = (contact: AIContact) => {
     setSelectedContact(contact);
+    setMessages([]); // Reset messages for new conversation
+    setConversationDocuments([]); // Reset conversation documents
     setCurrentView('chat');
     
     // Load conversation documents for this contact
@@ -265,86 +253,18 @@ export default function App() {
   };
 
   const handleCallClick = (contact: AIContact) => {
-    if (callState.isActive && callState.status !== 'ended') {
-      handleEndCall();
-      setTimeout(() => {
-        startNewCall(contact);
-      }, 200);
-    } else {
-      startNewCall(contact);
-    }
-  };
-
-  const startNewCall = (contact: AIContact) => {
     setSelectedContact(contact);
-    setCallState({
-      isActive: true,
-      duration: 0,
-      isMuted: false,
-      status: 'connecting'
-    });
     setCurrentView('call');
-    
-    geminiLiveService.initialize().then(initialized => {
-      if (initialized) {
-        geminiLiveService.startSession(contact).then(() => {
-          setTimeout(() => {
-            setCallState(prev => ({ ...prev, status: 'connected' }));
-          }, 2000);
-        });
-      } else {
-        setTimeout(() => {
-          setCallState(prev => ({ ...prev, status: 'ended' }));
-          handleEndCall();
-        }, 2000);
-      }
-    });
-  };
-
-  const handleEndCall = () => {
-    geminiLiveService.endSession();
-    setCallState({
-      isActive: false,
-      duration: 0,
-      isMuted: false,
-      status: 'ended'
-    });
-    setCurrentView('dashboard');
-    setSelectedContact(null);
-  };
-
-  const handleToggleMute = () => {
-    setCallState(prev => ({ ...prev, isMuted: !prev.isMuted }));
   };
 
   const handleSettingsClick = (contact?: AIContact) => {
     if (contact) {
       setSelectedContact(contact);
       setCurrentView('settings');
-    }
-  };
-
-  const handleNewChatClick = async (contact: AIContact) => {
-    // Clear messages for this contact to start fresh
-    const otherMessages = messages.filter(m => m.contactId !== contact.id);
-    setMessages(otherMessages);
-    
-    // Clear conversation documents for this contact
-    setConversationDocuments(prev => {
-      const updated = { ...prev };
-      delete updated[contact.id];
-      return updated;
-    });
-    
-    handleChatClick(contact);
-  };
-
-  const handleBack = () => {
-    if (currentView === 'call') {
-      handleEndCall();
     } else {
-      setCurrentView('dashboard');
+      // Global settings
       setSelectedContact(null);
+      setCurrentView('settings');
     }
   };
 
@@ -395,11 +315,10 @@ export default function App() {
     setShowSidebar(prev => !prev);
   };
 
-  const handleSendMessage = async (content: string, documents?: DocumentInfo[]) => {
+  const handleSendMessage = (content: string, documents?: DocumentInfo[]) => {
     if (!selectedContact) return;
 
-    const existingConversationDocs = conversationDocuments[selectedContact.id] || [];
-
+    // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
       content,
@@ -411,319 +330,50 @@ export default function App() {
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Add new documents to conversation documents
+    // Add documents to conversation documents if provided
     if (documents && documents.length > 0) {
-      try {
-        console.log(`💾 Saving ${documents.length} conversation documents to Supabase`);
-        
-        // Save each document to Supabase
-        for (const doc of documents) {
-          await documentContextService.saveConversationDocument(selectedContact, doc);
-        }
-        
-        const updatedConversationDocs = [...existingConversationDocs];
-        
-        documents.forEach(newDoc => {
-          if (!updatedConversationDocs.find(doc => doc.id === newDoc.id)) {
-            updatedConversationDocs.push(newDoc);
-          }
-        });
-        
-        setConversationDocuments(prev => ({
-          ...prev,
-          [selectedContact.id]: updatedConversationDocs
-        }));
-        
-        console.log(`✅ Saved conversation documents to Supabase`);
-      } catch (error) {
-        console.error('❌ Failed to save conversation documents:', error);
-        // Continue with the conversation even if document saving fails
-      }
+      setConversationDocuments(prev => [...prev, ...documents]);
     }
 
-    try {
-      // Get conversation history for this contact
-      const contactMessages = messages.filter(m => m.contactId === selectedContact.id);
-      const chatHistory = [...contactMessages, userMessage];
-
-      // Get fresh document context from Supabase for AI
-      const documentContext = await documentContextService.getAgentDocumentContext(selectedContact);
-
-      // Generate AI response using the enhanced service
-      const response = await geminiService.generateResponse(
-        selectedContact,
-        content,
-        chatHistory,
-        documentContext.allDocuments
-      );
-
+    // Simulate AI response
+    setTimeout(() => {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: response,
+        content: `I understand you're asking about "${content}". Let me help you with that. ${documents && documents.length > 0 ? `I can see you've shared ${documents.length} document${documents.length > 1 ? 's' : ''} with me, which I'll reference in my response.` : ''}`,
         sender: 'ai',
         timestamp: new Date(),
         contactId: selectedContact.id
       };
-
       setMessages(prev => [...prev, aiMessage]);
+    }, 1000);
+  };
 
-      // Update contact's last used timestamp in Supabase
-      if (user) {
-        try {
-          await supabaseService.updateUserAgent(selectedContact.id, {
-            last_used_at: new Date().toISOString(),
-            last_seen: 'now'
-          });
-
-          // Update local state
-          setContacts(prev => prev.map(contact => 
-            contact.id === selectedContact.id 
-              ? { ...contact, lastSeen: 'now' }
-              : contact
-          ));
-        } catch (error) {
-          console.warn('Failed to update agent last used time:', error);
-        }
-      }
-
-    } catch (error) {
-      console.error('Error generating AI response:', error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: "I'm sorry, I'm having trouble responding right now. Please try again in a moment.",
-        sender: 'ai',
-        timestamp: new Date(),
-        contactId: selectedContact.id
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+  const handleBack = () => {
+    if (isCreatingAgent) {
+      setIsCreatingAgent(false);
+      setTemplateToCreate(null);
     }
+    setCurrentView('dashboard');
+    setSelectedContact(null);
   };
 
-  const handleSaveContact = async (contact: AIContact) => {
-    try {
-      if (!user) {
-        console.error('No user found for saving contact');
-        return;
-      }
-
-      console.log('💾 Saving contact:', contact.name);
-
-      // Check if this is a new contact or existing one
-      const existingContact = contacts.find(c => c.id === contact.id);
-      
-      if (existingContact && !contact.id.startsWith('temp_') && !contact.id.startsWith('new-')) {
-        // Update existing contact in Supabase
-        await supabaseService.updateUserAgent(contact.id, {
-          name: contact.name,
-          description: contact.description,
-          initials: contact.initials,
-          color: contact.color,
-          voice: contact.voice,
-          avatar_url: contact.avatar,
-          status: contact.status
-        });
-
-        // Handle integrations updates
-        if (contact.integrations) {
-          // For simplicity, we'll delete all existing integrations and recreate them
-          if (existingContact?.integrations) {
-            for (const integration of existingContact.integrations) {
-              try {
-                await supabaseService.deleteAgentIntegration(integration.id);
-              } catch (error) {
-                console.error(`Failed to delete integration ${integration.id}:`, error);
-              }
-            }
-          }
-
-          // Create new integrations
-          const savedIntegrations = [];
-          for (const integration of contact.integrations) {
-            try {
-              const savedIntegration = await supabaseService.createAgentIntegration(contact.id, integration);
-              savedIntegrations.push({
-                id: savedIntegration.id,
-                integrationId: integration.integrationId,
-                name: integration.name,
-                config: integration.config,
-                status: savedIntegration.status
-              });
-            } catch (error) {
-              console.error(`Failed to save integration ${integration.name}:`, error);
-            }
-          }
-          
-          contact.integrations = savedIntegrations;
-        }
-
-        // Handle documents updates
-        if (contact.documents) {
-          // For simplicity, we'll delete all existing documents and recreate them
-          if (existingContact?.documents) {
-            for (const document of existingContact.documents) {
-              try {
-                await supabaseService.deleteAgentDocument(document.id);
-              } catch (error) {
-                console.error(`Failed to delete document ${document.id}:`, error);
-              }
-            }
-          }
-
-          // Create new documents
-          const savedDocuments = [];
-          for (const document of contact.documents) {
-            try {
-              const savedDocument = await supabaseService.createAgentDocument(contact.id, document);
-              savedDocuments.push({
-                id: savedDocument.id,
-                name: document.name,
-                type: document.type,
-                size: document.size,
-                uploadedAt: new Date(savedDocument.uploaded_at),
-                content: document.content,
-                summary: document.summary,
-                extractedText: document.extractedText,
-                metadata: document.metadata
-              });
-            } catch (error) {
-              console.error(`Failed to save document ${document.name}:`, error);
-            }
-          }
-          
-          contact.documents = savedDocuments;
-        }
-
-        console.log('✅ Updated existing contact in Supabase');
-      } else {
-        // Create new contact in Supabase
-        const newAgent = await supabaseService.createUserAgent(user.id, contact);
-        contact.id = newAgent.id; // Update with the database ID
-
-        // Save integrations if any
-        if (contact.integrations && contact.integrations.length > 0) {
-          const savedIntegrations = [];
-          for (const integration of contact.integrations) {
-            try {
-              const savedIntegration = await supabaseService.createAgentIntegration(newAgent.id, integration);
-              savedIntegrations.push({
-                id: savedIntegration.id,
-                integrationId: integration.integrationId,
-                name: integration.name,
-                config: integration.config,
-                status: savedIntegration.status
-              });
-            } catch (integrationError) {
-              console.error(`Failed to save integration ${integration.name}:`, integrationError);
-            }
-          }
-          
-          contact.integrations = savedIntegrations;
-        }
-
-        // Save documents if any
-        if (contact.documents && contact.documents.length > 0) {
-          const savedDocuments = [];
-          for (const document of contact.documents) {
-            try {
-              const savedDocument = await supabaseService.createAgentDocument(newAgent.id, document);
-              savedDocuments.push({
-                id: savedDocument.id,
-                name: document.name,
-                type: document.type,
-                size: document.size,
-                uploadedAt: new Date(savedDocument.uploaded_at),
-                content: document.content,
-                summary: document.summary,
-                extractedText: document.extractedText,
-                metadata: document.metadata
-              });
-            } catch (documentError) {
-              console.error(`Failed to save document ${document.name}:`, documentError);
-            }
-          }
-          
-          contact.documents = savedDocuments;
-        }
-        
-        console.log('✅ Created new contact in Supabase with ID:', newAgent.id);
-      }
-
-      // Update local state
-      setContacts(prev => {
-        const existingIndex = prev.findIndex(c => c.id === contact.id);
-        if (existingIndex >= 0) {
-          const updated = [...prev];
-          updated[existingIndex] = contact;
-          return updated;
-        } else {
-          return [...prev, contact];
-        }
-      });
-
-      // Restart integrations with new configuration
-      if (contact.integrations) {
-        contact.integrations.forEach(integrationInstance => {
-          const integration = getIntegrationById(integrationInstance.integrationId);
-          if (integration && integrationInstance.config.enabled && integration.category !== 'action') {
-            integrationsService.startPeriodicExecution(
-              contact.id, 
-              integration, 
-              integrationInstance.config, 
-              (contactId, data) => {
-                console.log(`Integration data updated for contact ${contactId}`);
-              }
-            );
-          }
-        });
-      }
-
-      setSelectedContact(contact);
-      console.log('✅ Contact saved successfully');
-
-    } catch (error) {
-      console.error('❌ Error saving contact:', error);
-      alert('Failed to save contact. Please try again.');
-    }
+  const toggleSidebar = () => {
+    setShowSidebar(!showSidebar);
   };
 
-  const handleCreateNewAgent = () => {
-    const newAgent: AIContact = {
-      id: `temp_${Date.now()}`, // Temporary ID, will be replaced when saved
-      name: 'New AI Assistant',
-      description: 'A helpful AI assistant ready to be customized.',
-      initials: 'AI',
-      color: '#3b82f6',
-      status: 'online',
-      lastSeen: 'now',
-      voice: 'Puck'
-    };
-    
-    setSelectedContact(newAgent);
-    setCurrentView('settings');
-  };
-
-  // Loading state
-  if (loading || dataLoading) {
+  // Show loading screen while checking auth
+  if (loading) {
     return (
-      <div className="h-screen bg-glass-bg flex items-center justify-center">
+      <div className="min-h-screen bg-glass-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#186799] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">
-            {loading ? 'Loading...' : 'Loading your AI agents...'}
-          </p>
-          {dataLoading && (
-            <p className="text-slate-400 text-sm mt-2">
-              Connecting to database...
-            </p>
-          )}
+          <div className="w-8 h-8 border-4 border-[#186799] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-white">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // If not authenticated, show landing page or signup page based on currentView
+  // If user is not authenticated, show public pages
   if (!user) {
     if (currentView === 'signup') {
       return <SignupPage onSuccess={handleSignupSuccess} onBackToLanding={handleBackToLanding} onSignIn={handleSignIn} />;
