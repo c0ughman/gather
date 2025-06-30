@@ -24,6 +24,18 @@ export default function CallScreen({
   showSidebar = true,
   onToggleSidebar
 }: CallScreenProps) {
+  // Add null checks for required props
+  if (!contact || !callState) {
+    return (
+      <div className="h-full bg-glass-bg flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-slate-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading call...</p>
+        </div>
+      </div>
+    );
+  }
+
   const [pulseAnimation, setPulseAnimation] = useState(false);
   const [responseText, setResponseText] = useState<string>("");
   const [serviceState, setServiceState] = useState<'idle' | 'listening' | 'processing' | 'responding'>('idle');
