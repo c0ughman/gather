@@ -151,7 +151,7 @@ export default function ContactSidebar({
           className="flex items-center space-x-3 w-full text-left hover:bg-slate-700 p-2 rounded-lg transition-colors duration-200"
         >
           <Home className="w-5 h-5 text-slate-400" />
-          <span className="text-slate-300 font-inter">Home</span>
+          <span className="text-slate-300 font-inter">Library</span>
         </button>
       </div>
 

@@ -3,6 +3,7 @@ import { ArrowLeft, Mic, MicOff, Phone, PhoneOff, Settings, Volume2, VolumeX, Mo
 import { AIContact } from '../../../core/types/types';
 import { CallState } from '../types/voice';
 import { geminiLiveService } from '../services/geminiLiveService';
+import { useMobile } from '../../../core/hooks/useLocalStorage';
 
 interface CallScreenProps {
   contact: AIContact;
@@ -28,6 +29,7 @@ export default function CallScreen({
   const [serviceState, setServiceState] = useState<'idle' | 'listening' | 'processing' | 'responding'>('idle');
   const serviceInitialized = useRef(false);
   const initializationInProgress = useRef(false);
+  const isMobile = useMobile();
 
   useEffect(() => {
     if (callState.status === 'connecting') {
@@ -201,13 +203,13 @@ export default function CallScreen({
     return `radial-gradient(circle, rgb(${lightCompR}, ${lightCompG}, ${lightCompB}) 0%, ${color} 40%, rgba(${r}, ${g}, ${b}, 0.4) 50%, rgba(${r}, ${g}, ${b}, 0.1) 60%, rgba(0, 0, 0, 0) 70%)`;
   };
 
-  // Calculate main content width based on sidebar visibility
-  const mainContentClass = showSidebar ? "w-1/2 mx-auto" : "w-3/4 ml-1/4";
+  // Center content within available space
+  const mainContentClass = "max-w-2xl mx-auto";
 
   return (
     <div className="h-full bg-glass-bg flex flex-col">
       {/* Header */}
-      <div className="p-6 flex items-center justify-between border-b border-slate-700 bg-glass-panel glass-effect">
+      <div className={`p-6 flex items-center justify-between border-b border-slate-700 bg-glass-panel glass-effect ${isMobile ? 'safe-area-top' : ''}`}>
         <button
           onClick={onBack}
           className="p-3 rounded-full hover:bg-slate-800 transition-colors duration-200"
@@ -222,12 +224,18 @@ export default function CallScreen({
           </p>
         </div>
         
-        <button 
-          onClick={toggleSidebar}
-          className="p-3 rounded-full hover:bg-slate-800 transition-colors duration-200"
-        >
-          <MoreVertical className="w-6 h-6 text-slate-400" />
-        </button>
+        {!isMobile && (
+          <button 
+            onClick={toggleSidebar}
+            className="p-3 rounded-full hover:bg-slate-800 transition-colors duration-200"
+          >
+            <MoreVertical className="w-6 h-6 text-slate-400" />
+          </button>
+        )}
+        
+        {isMobile && (
+          <div className="w-12 h-12" /> // Spacer to center the title
+        )}
       </div>
 
       {/* Main Call Area */}
@@ -321,7 +329,7 @@ export default function CallScreen({
       </div>
 
       {/* Call Controls */}
-      <div className="pb-8 px-8">
+      <div className={`pb-8 px-8 ${isMobile ? 'safe-area-bottom' : ''}`}>
         <div className="flex items-center justify-center space-x-6">
           {/* Mute Button */}
           <button

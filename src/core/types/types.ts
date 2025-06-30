@@ -1,4 +1,4 @@
-import type { IntegrationInstance } from './types/integrations';
+import type { IntegrationInstance } from '../../modules/integrations/types/integrations';
 
 export interface AIContact {
   id: string;
@@ -12,6 +12,7 @@ export interface AIContact {
   avatar?: string; // URL or base64 data for profile image
   integrations?: IntegrationInstance[];
   documents?: DocumentInfo[];
+  total_messages?: number; // Total number of messages with this contact
 }
 
 export interface DataFetchingConfig {
@@ -66,4 +67,4 @@ export interface CallState {
 export type Screen = 'dashboard' | 'chat' | 'call' | 'settings';
 
 // Re-export integration types
-export type { Integration, IntegrationConfig, IntegrationInstance, IntegrationField } from './types/integrations';
+export type { Integration, IntegrationConfig, IntegrationInstance, IntegrationField } from '../../modules/integrations/types/integrations';

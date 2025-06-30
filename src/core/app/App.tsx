@@ -9,7 +9,7 @@ import LandingPage from '../../components/LandingPage';
 import SignupPage from '../../components/SignupPage';
 import PricingPage from '../../components/PricingPage';
 import SuccessPage from '../../components/SuccessPage';
-import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen } from '../../modules/ui';
+import { Dashboard, ContactSidebar, SettingsSidebar, SettingsScreen, MobileContactsScreen, MobileLibraryScreen, MobileNavigation } from '../../modules/ui';
 import { ChatScreen } from '../../modules/chat';
 import { AIContact, Message, CallState } from '../types/types';
 import { DocumentInfo } from '../../modules/fileManagement/types/documents';
@@ -17,14 +17,17 @@ import { documentContextService } from '../../modules/fileManagement/services/do
 import { geminiService } from '../../modules/fileManagement/services/geminiService';
 import { supabaseService } from '../../modules/database/services/supabaseService';
 import { integrationsService, getIntegrationById } from '../../modules/integrations';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useLocalStorage, useMobile } from '../hooks/useLocalStorage';
 import { SubscriptionBadge, ManageSubscriptionButton } from '../../modules/payments';
 
 type ViewType = 'landing' | 'signup' | 'pricing' | 'dashboard' | 'chat' | 'call' | 'settings' | 'create-agent' | 'success' | 'login';
+type MobileViewType = 'contacts' | 'library';
 
 export default function App() {
   const { user, loading } = useAuth();
+  const isMobile = useMobile();
   const [currentView, setCurrentView] = useState<ViewType>('landing');
+  const [mobileView, setMobileView] = useState<MobileViewType>('contacts');
   const [selectedContact, setSelectedContact] = useState<AIContact | null>(null);
   const [contacts, setContacts] = useState<AIContact[]>([]);
   const [messages, setMessages] = useLocalStorage<Message[]>('gather-messages', []);
@@ -252,7 +255,7 @@ export default function App() {
             (integrationInstance.config.trigger === 'chat-start' || integrationInstance.config.trigger === 'both')) {
           try {
             const data = await integrationsService.executeIntegration(integration, integrationInstance.config);
-            integrationsService.storeIntegrationData(contact.id, integration.id, data);
+            integrationsService.storeIntegrationData(contact.id, integration.id, data, `Data from ${integration.name}`);
           } catch (error) {
             console.error(`Failed to execute integration ${integration.name}:`, error);
           }
@@ -346,12 +349,46 @@ export default function App() {
   };
 
   const handleHomeClick = () => {
-    setCurrentView('dashboard');
+    if (isMobile) {
+      setMobileView('library');
+    } else {
+      setCurrentView('dashboard');
+    }
     setSelectedContact(null);
   };
 
   const handleCreateAgent = () => {
     setCurrentView('create-agent');
+  };
+
+  // Mobile-specific handlers
+  const handleMobileViewChange = (view: MobileViewType) => {
+    setMobileView(view);
+    if (view === 'contacts') {
+      setCurrentView('dashboard'); // Reset to dashboard view
+    } else if (view === 'library') {
+      setCurrentView('dashboard');
+    }
+    setSelectedContact(null);
+  };
+
+  const handleMobileChatClick = (contact: AIContact) => {
+    handleChatClick(contact); // Use existing chat logic
+  };
+
+  const handleMobileBack = () => {
+    console.log('🔙 Mobile back clicked, current view:', currentView, 'mobile view:', mobileView);
+    if (currentView === 'call') {
+      // From call, go back to chat with the same contact
+      console.log('📞→💬 Going from call to chat');
+      setCurrentView('chat');
+    } else if (currentView === 'chat' || currentView === 'settings' || currentView === 'create-agent') {
+      // From chat, settings, or create-agent, go back to contacts
+      console.log('💬→📱 Going from chat/settings/create-agent to contacts');
+      setMobileView('contacts');
+      setCurrentView('dashboard');
+      setSelectedContact(null);
+    }
   };
 
   const handleToggleSidebar = () => {
@@ -719,7 +756,7 @@ export default function App() {
         <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
         <Route path="/success" element={<SuccessPage />} />
         <Route path="*" element={
-          <div className="h-screen flex bg-glass-bg">
+          <div className="h-screen bg-glass-bg">
             {/* OAuth Success/Error Message */}
             {oauthMessage && (
               <div className="fixed top-4 right-4 z-50 max-w-md">
@@ -733,68 +770,41 @@ export default function App() {
               </div>
             )}
 
-            {/* Left Sidebar - Contacts */}
-            <div className="w-80 border-r border-slate-700">
-              <ContactSidebar
-                contacts={contacts}
-                onChatClick={handleChatClick}
-                onCallClick={handleCallClick}
-                onSettingsClick={handleSettingsClick}
-                onHomeClick={handleHomeClick}
-                onCreateAgent={handleCreateAgent}
-              />
-            </div>
-
-            {/* Main Content Area */}
-            <div className="flex-1 flex">
-              <div className="flex-1">
-                {currentView === 'dashboard' && (
-                  <Dashboard
-                    contacts={contacts}
-                    onChatClick={handleChatClick}
-                    onCallClick={handleCallClick}
-                    onSettingsClick={handleSettingsClick}
-                    onNewChatClick={handleNewChatClick}
-                    onCreateAgent={handleCreateAgent}
-                  />
-                )}
-                
-                {currentView === 'chat' && selectedContact && (
+            {isMobile ? (
+              /* MOBILE LAYOUT */
+              <div className="h-full flex flex-col">
+                {currentView === 'chat' && selectedContact ? (
+                  /* Mobile Chat Screen */
                   <ChatScreen
                     contact={selectedContact}
                     messages={contactMessages}
                     conversationDocuments={contactConversationDocuments}
-                    onBack={handleBack}
+                    onBack={handleMobileBack}
                     onSendMessage={handleSendMessage}
                     onSettingsClick={handleSettingsClick}
                     onNewChatClick={handleNewChatClick}
                     onCallClick={handleCallClick}
-                    showSidebar={showSidebar}
-                    onToggleSidebar={handleToggleSidebar}
+                    showSidebar={false}
                   />
-                )}
-                
-                {currentView === 'call' && selectedContact && (
+                ) : currentView === 'call' && selectedContact ? (
+                  /* Mobile Call Screen */
                   <CallScreen
                     contact={selectedContact}
                     callState={callState}
-                    onBack={handleBack}
+                    onBack={handleMobileBack}
                     onEndCall={handleEndCall}
                     onToggleMute={handleToggleMute}
-                    showSidebar={showSidebar}
-                    onToggleSidebar={handleToggleSidebar}
+                    showSidebar={false}
                   />
-                )}
-                
-                {currentView === 'settings' && selectedContact && (
+                ) : currentView === 'settings' && selectedContact ? (
+                  /* Mobile Settings Screen */
                   <SettingsScreen
                     contact={selectedContact}
-                    onBack={handleBack}
+                    onBack={handleMobileBack}
                     onSave={handleSaveContact}
                   />
-                )}
-                
-                {currentView === 'create-agent' && (
+                ) : currentView === 'create-agent' ? (
+                  /* Mobile Create Agent Screen */
                   <SettingsScreen
                     contact={{
                       id: `temp_${Date.now()}`,
@@ -806,25 +816,146 @@ export default function App() {
                       lastSeen: 'now',
                       voice: 'Puck'
                     }}
-                    onBack={handleBack}
+                    onBack={handleMobileBack}
                     onSave={(contact) => {
                       handleSaveContact(contact);
                       setCurrentView('dashboard');
+                      setMobileView('contacts');
                     }}
                   />
+                ) : (
+                  /* Mobile Main Views */
+                  <>
+                    <div className="flex-1 overflow-hidden">
+                      {mobileView === 'contacts' && (
+                        <MobileContactsScreen
+                          contacts={contacts}
+                          onChatClick={handleMobileChatClick}
+                          onCallClick={handleCallClick}
+                          onCreateAgent={handleCreateAgent}
+                        />
+                      )}
+                      
+                      {mobileView === 'library' && (
+                        <MobileLibraryScreen
+                          contacts={contacts}
+                          onChatClick={handleMobileChatClick}
+                          onCallClick={handleCallClick}
+                          onSettingsClick={handleSettingsClick}
+                          onCreateAgent={handleCreateAgent}
+                        />
+                      )}
+                      
+
+                    </div>
+                    
+                    {/* Mobile Bottom Navigation */}
+                    <MobileNavigation
+                      currentView={mobileView}
+                      onViewChange={handleMobileViewChange}
+                      onCreateAgent={handleCreateAgent}
+                    />
+                  </>
                 )}
               </div>
-
-              {/* Right Sidebar - Settings (when in chat view) */}
-              {currentView === 'chat' && showSidebar && (
-                <div className="w-80 border-l border-slate-700">
-                  <SettingsSidebar
-                    contact={selectedContact}
-                    onSave={handleSaveContact}
+            ) : (
+              /* DESKTOP LAYOUT */
+              <div className="h-screen flex">
+                {/* Left Sidebar - Contacts */}
+                <div className="w-80 border-r border-slate-700">
+                  <ContactSidebar
+                    contacts={contacts}
+                    onChatClick={handleChatClick}
+                    onCallClick={handleCallClick}
+                    onSettingsClick={handleSettingsClick}
+                    onHomeClick={handleHomeClick}
+                    onCreateAgent={handleCreateAgent}
                   />
                 </div>
-              )}
-            </div>
+
+                {/* Main Content Area */}
+                <div className="flex-1 flex">
+                  <div className="flex-1">
+                    {currentView === 'dashboard' && (
+                      <Dashboard
+                        contacts={contacts}
+                        onChatClick={handleChatClick}
+                        onCallClick={handleCallClick}
+                        onSettingsClick={handleSettingsClick}
+                        onNewChatClick={handleNewChatClick}
+                        onCreateAgent={handleCreateAgent}
+                      />
+                    )}
+                    
+                    {currentView === 'chat' && selectedContact && (
+                      <ChatScreen
+                        contact={selectedContact}
+                        messages={contactMessages}
+                        conversationDocuments={contactConversationDocuments}
+                        onBack={handleBack}
+                        onSendMessage={handleSendMessage}
+                        onSettingsClick={handleSettingsClick}
+                        onNewChatClick={handleNewChatClick}
+                        onCallClick={handleCallClick}
+                        showSidebar={showSidebar}
+                        onToggleSidebar={handleToggleSidebar}
+                      />
+                    )}
+                    
+                    {currentView === 'call' && selectedContact && (
+                      <CallScreen
+                        contact={selectedContact}
+                        callState={callState}
+                        onBack={handleBack}
+                        onEndCall={handleEndCall}
+                        onToggleMute={handleToggleMute}
+                        showSidebar={showSidebar}
+                        onToggleSidebar={handleToggleSidebar}
+                      />
+                    )}
+                    
+                    {currentView === 'settings' && selectedContact && (
+                      <SettingsScreen
+                        contact={selectedContact}
+                        onBack={handleBack}
+                        onSave={handleSaveContact}
+                      />
+                    )}
+                    
+                    {currentView === 'create-agent' && (
+                      <SettingsScreen
+                        contact={{
+                          id: `temp_${Date.now()}`,
+                          name: 'New AI Assistant',
+                          description: 'A helpful AI assistant ready to be customized.',
+                          initials: 'AI',
+                          color: '#3b82f6',
+                          status: 'online',
+                          lastSeen: 'now',
+                          voice: 'Puck'
+                        }}
+                        onBack={handleBack}
+                        onSave={(contact) => {
+                          handleSaveContact(contact);
+                          setCurrentView('dashboard');
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Right Sidebar - Settings (when in chat or call view) */}
+                  {(currentView === 'chat' || currentView === 'call') && showSidebar && (
+                    <div className="w-80 border-l border-slate-700">
+                      <SettingsSidebar
+                        contact={selectedContact}
+                        onSave={handleSaveContact}
+                        onClose={handleToggleSidebar}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         } />
       </Routes>

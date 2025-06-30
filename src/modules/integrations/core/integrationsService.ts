@@ -73,6 +73,38 @@ class IntegrationsService {
   }
 
   /**
+   * Start periodic execution of an integration for a contact
+   */
+  startPeriodicExecution(
+    contactId: string, 
+    integration: Integration, 
+    config: IntegrationConfig, 
+    onUpdate: (contactId: string, data: any) => void
+  ): void {
+    // For now, just execute once immediately if it's a periodic integration
+    // In a real implementation, you'd set up an interval based on config.interval
+    if (config.enabled && integration.category !== 'action') {
+      setTimeout(async () => {
+        try {
+          const data = await this.executeIntegration(integration, config);
+          this.storeIntegrationData(contactId, integration.id, data, `Data from ${integration.name}`);
+          onUpdate(contactId, data);
+                 } catch (error) {
+           console.error(`❌ Periodic execution failed for ${integration.name}:`, error instanceof Error ? error.message : 'Unknown error');
+        }
+      }, 1000); // Execute after 1 second
+    }
+  }
+
+  /**
+   * Stop periodic execution of an integration for a contact
+   */
+  stopPeriodicExecution(contactId: string, integrationId: string): void {
+    console.log(`⏹️ Stopping periodic execution for integration ${integrationId} on contact ${contactId}`);
+    // In a real implementation, you'd clear the interval here
+  }
+
+  /**
    * Execute HTTP request integration
    */
   private async executeHttpRequest(config: IntegrationConfig): Promise<any> {

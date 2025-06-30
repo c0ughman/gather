@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Bot, Loader2, Paperclip, X, MessageSquarePlus, Phone, ChevronRight, ChevronLeft, MoreVertical } from 'lucide-react';
+import { ArrowLeft, Send, Bot, Loader2, Paperclip, X, MessageSquarePlus, Phone, ChevronRight, ChevronLeft, MoreVertical, Settings } from 'lucide-react';
 import { AIContact, Message } from '../../../core/types/types';
 import { DocumentInfo } from '../../fileManagement/types/documents';
 import DocumentUpload, { DocumentList } from '../../ui/components/DocumentUpload';
 import { getIntegrationById } from '../../integrations/data/integrations';
+import { useMobile } from '../../../core/hooks/useLocalStorage';
 
 interface ChatScreenProps {
   contact: AIContact;
@@ -36,6 +37,7 @@ export default function ChatScreen({
   const [pendingDocuments, setPendingDocuments] = useState<DocumentInfo[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMobile = useMobile();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -152,25 +154,38 @@ export default function ChatScreen({
     return `linear-gradient(135deg, rgb(${r}, ${g}, ${b}) 0%, rgb(${lightR}, ${lightG}, ${lightB}) 100%)`;
   };
 
-  // Helper function to render AI message with simple markup support
+    // Helper function to render AI message with ChatGPT-style markdown support
   const renderAIMessage = (content: string) => {
-    // Simple markup parsing
-    let formattedContent = content
-      // Bold text: **text** or __text__
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/__(.*?)__/g, '<strong>$1</strong>')
-      // Italic text: *text* or _text_
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/_(.*?)_/g, '<em>$1</em>')
-      // Code: `code`
-      .replace(/`(.*?)`/g, '<code class="bg-slate-700 text-[#186799] px-1 py-0.5 rounded text-sm">$1</code>')
-      // Line breaks
-      .replace(/\n/g, '<br>');
+    // Split content into paragraphs first
+    const paragraphs = content.split(/\n\s*\n/);
+    
+    const formattedParagraphs = paragraphs.map((paragraph, index) => {
+      // Apply markdown formatting to each paragraph
+      let formattedContent = paragraph
+        // Bold text: **text** or __text__
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+        .replace(/__(.*?)__/g, '<strong class="font-semibold">$1</strong>')
+        // Italic text: *text* or _text_
+        .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+        .replace(/_(.*?)_/g, '<em class="italic">$1</em>')
+        // Code: `code`
+        .replace(/`(.*?)`/g, '<code class="bg-slate-700 text-[#186799] px-1.5 py-0.5 rounded text-sm font-mono">$1</code>')
+        // Single line breaks within paragraphs
+        .replace(/\n/g, '<br>');
+
+      // Return paragraph with proper spacing
+      return `<p class="${index === 0 ? 'mt-0' : 'mt-5'} mb-2 last:mb-0">${formattedContent}</p>`;
+    });
 
     return (
       <div 
-        className="text-white"
-        dangerouslySetInnerHTML={{ __html: formattedContent }}
+        className="text-white prose prose-invert max-w-none break-words leading-7"
+        style={{ 
+          fontSize: '1rem',
+          lineHeight: '1.75',
+          color: 'var(--text-primary, #fff)'
+        }}
+        dangerouslySetInnerHTML={{ __html: formattedParagraphs.join('') }}
       />
     );
   };
@@ -180,14 +195,14 @@ export default function ChatScreen({
   const totalConversationDocuments = conversationDocuments.length;
   const pendingDocumentsCount = pendingDocuments.length;
 
-  // Calculate main content width based on sidebar visibility
-  const mainContentClass = showSidebar ? "left-1/4 right-1/4" : "left-1/4 right-0";
+  // Header and input positioning - adjust for sidebar on desktop, full width on mobile
+  const headerClass = isMobile ? "left-0 right-0" : (showSidebar ? "left-80 right-80" : "left-80 right-0");
 
   return (
     <div className="h-full bg-glass-bg flex flex-col font-inter">
       {/* Header - Fixed at top with glass effect and backdrop blur */}
       <div 
-        className={`fixed top-0 ${mainContentClass} z-20 border-b border-slate-700 p-3 flex items-center space-x-3`}
+        className={`fixed top-0 ${headerClass} z-20 border-b border-slate-700 p-3 flex items-center space-x-3 ${isMobile ? 'safe-area-top' : ''}`}
         style={{
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
@@ -252,18 +267,30 @@ export default function ChatScreen({
             <Phone className="w-4 h-4 text-slate-400" />
           </button>
 
-          <button
-            onClick={toggleSidebar}
-            className="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200"
-            title={showSidebar ? "Hide sidebar" : "Show sidebar"}
-          >
-            <MoreVertical className="w-4 h-4 text-slate-400" />
-          </button>
+          {isMobile ? (
+            /* Mobile: Show settings button instead of three dots */
+            <button
+              onClick={() => onSettingsClick(contact)}
+              className="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200"
+              title="Agent settings"
+            >
+              <Settings className="w-4 h-4 text-slate-400" />
+            </button>
+          ) : (
+            /* Desktop: Show three dots for sidebar toggle */
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200"
+              title={showSidebar ? "Hide sidebar" : "Show sidebar"}
+            >
+              <MoreVertical className="w-4 h-4 text-slate-400" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Messages Area - Scrollable with padding for fixed input */}
-      <div className={`flex-1 overflow-y-auto pt-20 pb-32 ${showSidebar ? 'w-1/2 mx-auto' : 'w-3/4 ml-1/4'}`}>
+      <div className={`flex-1 overflow-y-auto pt-20 pb-32 px-4 ${isMobile ? 'mobile-scroll' : ''}`}>
         <div className="p-4">
           {messages.length === 0 && (
             <div className="text-center py-8">
@@ -327,10 +354,19 @@ export default function ChatScreen({
                   // User message - bubble style with agent color gradient
                   <div className="flex justify-end">
                     <div
-                      className="max-w-xs lg:max-w-md px-4 py-3 rounded-2xl text-white shadow-lg"
+                      className="max-w-xs lg:max-w-md px-4 py-3 rounded-3xl text-white shadow-lg"
                       style={{ background: getUserBubbleGradient(contact.color) }}
                     >
-                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <div 
+                        className="prose prose-invert max-w-none break-words leading-7"
+                        style={{ 
+                          fontSize: '1rem',
+                          lineHeight: '1.75',
+                          color: '#fff'
+                        }}
+                      >
+                        <p className="my-0">{message.content}</p>
+                      </div>
                       
                       {/* Show attached documents (only newly attached in this message) */}
                       {message.attachments && message.attachments.length > 0 && (
@@ -376,7 +412,7 @@ export default function ChatScreen({
 
       {/* Document Upload Section - Show above input when expanded */}
       {showDocumentUpload && (
-        <div className={`relative z-10 p-4 bg-glass-bg ${showSidebar ? 'w-1/2 mx-auto' : 'w-3/4 ml-1/4'}`}>
+        <div className="relative z-10 p-4 bg-glass-bg">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-medium">Upload Conversation Documents</h3>
             <button
@@ -414,8 +450,8 @@ export default function ChatScreen({
       )}
 
       {/* Input Area - Fixed at bottom */}
-      <div className={`fixed bottom-0 z-10 p-4 ${mainContentClass}`}>
-        <div className="relative max-w-4xl mx-auto">
+      <div className={`fixed bottom-0 z-10 p-4 ${headerClass} ${isMobile ? 'safe-area-bottom' : ''}`}>
+        <div className="relative">
           <div 
             className="relative flex items-center rounded-full border border-slate-600 focus-within:border-[#186799] transition-colors duration-200 shadow-lg"
             style={{
@@ -491,7 +527,7 @@ export default function ChatScreen({
 
       {/* Show existing conversation documents */}
       {totalConversationDocuments > 0 && !showDocumentUpload && (
-        <div className={`fixed bottom-20 z-10 p-4 ${mainContentClass}`}>
+        <div className={`fixed bottom-20 z-10 p-4 ${headerClass}`}>
           <div 
             className="rounded-lg border border-slate-700 p-4"
             style={{
