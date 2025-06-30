@@ -219,7 +219,7 @@ export default function App() {
     }
   };
 
-  const handleChatClick = (contact: AIContact) => {
+  const handleChatClick = async (contact: AIContact) => {
     setSelectedContact(contact);
     setMessages([]); // Reset messages for new conversation
     setConversationDocuments([]); // Reset conversation documents
