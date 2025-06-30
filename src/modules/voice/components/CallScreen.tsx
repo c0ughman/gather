@@ -1,31 +1,35 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, Mic, MicOff, Phone, PhoneOff, Settings, Volume2, VolumeX, MoreVertical } from 'lucide-react';
 import { AIContact } from '../../../core/types/types';
-import { CallState } from '../types/voice';
 import { geminiLiveService } from '../services/geminiLiveService';
 import { useMobile } from '../../../core/hooks/useLocalStorage';
 
 interface CallScreenProps {
   contact: AIContact;
-  callState: CallState;
   onBack: () => void;
   onEndCall: () => void;
-  onToggleMute: () => void;
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
 }
 
 export default function CallScreen({ 
   contact, 
-  callState, 
   onBack, 
-  onEndCall, 
-  onToggleMute,
+  onEndCall,
   showSidebar = true,
   onToggleSidebar
 }: CallScreenProps) {
+  const [pulseAnimation, setPulseAnimation] = useState(false);
+  const [responseText, setResponseText] = useState<string>("");
+  const [serviceState, setServiceState] = useState<'idle' | 'listening' | 'processing' | 'responding'>('idle');
+  const [isMuted, setIsMuted] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const serviceInitialized = useRef(false);
+  const initializationInProgress = useRef(false);
+  const isMobile = useMobile();
+
   // Early return if required props are not available
-  if (!contact || !callState) {
+  if (!contact) {
     return (
       <div className="h-full bg-glass-bg flex items-center justify-center">
         <div className="text-white text-lg">Loading...</div>
@@ -33,103 +37,78 @@ export default function CallScreen({
     );
   }
 
-  const [pulseAnimation, setPulseAnimation] = useState(false);
-  const [responseText, setResponseText] = useState<string>("");
-  const [serviceState, setServiceState] = useState<'idle' | 'listening' | 'processing' | 'responding'>('idle');
-  const serviceInitialized = useRef(false);
-  const initializationInProgress = useRef(false);
-  const isMobile = useMobile();
-
   useEffect(() => {
-    if (callState.status === 'connecting') {
-      setPulseAnimation(true);
-      
-      // Initialize the Gemini Live service when call is connecting
-      const initService = async () => {
-        if (!serviceInitialized.current && !initializationInProgress.current) {
-          initializationInProgress.current = true;
-          try {
-            console.log("🚀 Starting service initialization...");
-            
-            // Set up event handlers first
-            geminiLiveService.onResponse((response) => {
-              setResponseText(response.text);
-            });
-            
-            geminiLiveService.onError((error) => {
-              console.error("Gemini Live error:", error);
-              setResponseText("I'm having trouble with the connection. Let's try again.");
-            });
-            
-            geminiLiveService.onStateChange((state) => {
-              console.log(`🔄 Service state changed to: ${state}`);
-              setServiceState(state);
-            });
-            
-            // Initialize audio
-            const initialized = await geminiLiveService.initialize();
-            if (initialized) {
-              console.log("✅ Audio initialized, starting session...");
-              await geminiLiveService.startSession(contact);
-              serviceInitialized.current = true;
-              console.log("✅ Service fully initialized");
-            } else {
-              console.error("❌ Audio initialization failed");
-              setResponseText("Could not access microphone. Please check permissions.");
-            }
-          } catch (error) {
-            console.error("❌ Failed to initialize Gemini Live service:", error);
-            setResponseText("Failed to start voice chat. Please try again.");
-          } finally {
-            initializationInProgress.current = false;
+    setPulseAnimation(true);
+    
+    // Initialize the Gemini Live service when component mounts
+    const initService = async () => {
+      if (!serviceInitialized.current && !initializationInProgress.current) {
+        initializationInProgress.current = true;
+        try {
+          console.log("🚀 Starting service initialization...");
+          
+          // Set up event handlers first
+          geminiLiveService.onResponse((response) => {
+            setResponseText(response.text);
+          });
+          
+          geminiLiveService.onError((error) => {
+            console.error("Gemini Live error:", error);
+            setResponseText("I'm having trouble with the connection. Let's try again.");
+          });
+          
+          geminiLiveService.onStateChange((state) => {
+            console.log(`🔄 Service state changed to: ${state}`);
+            setServiceState(state);
+          });
+          
+          // Initialize audio
+          const initialized = await geminiLiveService.initialize();
+          if (initialized) {
+            console.log("✅ Audio initialized, starting session...");
+            await geminiLiveService.startSession(contact);
+            serviceInitialized.current = true;
+            setIsConnected(true);
+            setPulseAnimation(false);
+            console.log("✅ Service fully initialized");
+          } else {
+            console.error("❌ Audio initialization failed");
+            setResponseText("Could not access microphone. Please check permissions.");
+            setPulseAnimation(false);
           }
+        } catch (error) {
+          console.error("❌ Failed to initialize Gemini Live service:", error);
+          setResponseText("Failed to start voice chat. Please try again.");
+          setPulseAnimation(false);
+        } finally {
+          initializationInProgress.current = false;
         }
-      };
-      
-      initService();
-    } else {
-      setPulseAnimation(false);
-    }
+      }
+    };
+    
+    initService();
     
     return () => {
       // Clean up when component unmounts
-      if (callState.status === 'ended' && serviceInitialized.current) {
+      if (serviceInitialized.current) {
         geminiLiveService.endSession();
         serviceInitialized.current = false;
       }
     };
-  }, [callState.status, contact.id]);
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, [contact.id]);
 
   const getStatusText = () => {
-    switch (callState.status) {
-      case 'connecting':
-        return 'Connecting...';
-      case 'connected':
-        return formatDuration(callState.duration);
-      case 'ended':
-        return 'Call ended';
-      default:
-        return '';
+    if (!isConnected) {
+      return 'Connecting...';
     }
+    return 'Connected';
   };
 
   const getStatusColor = () => {
-    switch (callState.status) {
-      case 'connecting':
-        return 'text-yellow-400';
-      case 'connected':
-        return 'text-green-400';
-      case 'ended':
-        return 'text-red-400';
-      default:
-        return 'text-slate-400';
+    if (!isConnected) {
+      return 'text-yellow-400';
     }
+    return 'text-green-400';
   };
 
   const getServiceStateText = () => {
@@ -141,7 +120,7 @@ export default function CallScreen({
       case 'responding':
         return "🗣️ Speaking...";
       case 'idle':
-        return callState.status === 'connected' ? "💬 Ready to chat" : getStatusText();
+        return isConnected ? "💬 Ready to chat" : getStatusText();
       default:
         return getStatusText();
     }
@@ -163,16 +142,16 @@ export default function CallScreen({
   };
 
   const handleMicToggle = async () => {
-    onToggleMute();
+    setIsMuted(!isMuted);
     
     // If we're unmuting, start listening
-    if (callState.isMuted && serviceInitialized.current && callState.status === 'connected') {
+    if (isMuted && serviceInitialized.current && isConnected) {
       try {
         await geminiLiveService.startListening();
       } catch (error) {
         console.error("Failed to start listening:", error);
       }
-    } else if (!callState.isMuted && serviceInitialized.current) {
+    } else if (!isMuted && serviceInitialized.current) {
       geminiLiveService.stopListening();
     }
   };
@@ -277,7 +256,7 @@ export default function CallScreen({
           </div>
           
           {/* Pulse rings for connecting state */}
-          {callState.status === 'connecting' && (
+          {!isConnected && (
             <>
               <div 
                 className="absolute inset-0 rounded-2xl border-4 animate-ping opacity-50"
@@ -321,7 +300,7 @@ export default function CallScreen({
         {/* Status Indicator */}
         <div className="mb-8">
           <div className={`px-6 py-3 rounded-full bg-slate-800 border ${
-            callState.status === 'connected' ? 'border-green-500' : 'border-slate-600'
+            isConnected ? 'border-green-500' : 'border-slate-600'
           }`}>
             <span className={`text-lg font-medium ${getServiceStateColor()}`}>
               {getServiceStateText()}
@@ -330,7 +309,7 @@ export default function CallScreen({
         </div>
         
         {/* Response Text */}
-        {responseText && callState.status === 'connected' && (
+        {responseText && isConnected && (
           <div className="mb-8 max-w-md bg-slate-800 bg-opacity-70 p-4 rounded-lg border border-slate-700">
             <p className="text-slate-300 text-sm italic">"{responseText}"</p>
           </div>
@@ -343,16 +322,16 @@ export default function CallScreen({
           {/* Mute Button */}
           <button
             onClick={handleMicToggle}
-            disabled={callState.status !== 'connected'}
+            disabled={!isConnected}
             className={`p-4 rounded-full transition-all duration-200 ${
-              callState.isMuted
+              isMuted
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-slate-700 hover:bg-slate-600'
             } ${
-              callState.status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''
+              !isConnected ? 'opacity-50 cursor-not-allowed' : ''
             } shadow-lg hover:shadow-xl hover:scale-105`}
           >
-            {callState.isMuted ? (
+            {isMuted ? (
               <MicOff className="w-6 h-6 text-white" />
             ) : (
               <Mic className="w-6 h-6 text-white" />
@@ -369,9 +348,9 @@ export default function CallScreen({
 
           {/* Speaker Button */}
           <button
-            disabled={callState.status !== 'connected'}
+            disabled={!isConnected}
             className={`p-4 rounded-full bg-slate-700 hover:bg-slate-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 ${
-              callState.status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''
+              !isConnected ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
             <Volume2 className="w-6 h-6 text-white" />
@@ -381,7 +360,7 @@ export default function CallScreen({
         {/* Control Labels */}
         <div className="flex items-center justify-center space-x-6 mt-4">
           <span className="text-slate-400 text-sm w-16 text-center">
-            {callState.isMuted ? 'Unmute' : 'Mute'}
+            {isMuted ? 'Unmute' : 'Mute'}
           </span>
           <span className="text-slate-400 text-sm w-20 text-center">End Call</span>
           <span className="text-slate-400 text-sm w-16 text-center">Speaker</span>
