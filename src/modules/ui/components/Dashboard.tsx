@@ -164,68 +164,9 @@ export default function Dashboard({
     return `radial-gradient(circle, rgb(${lightCompR}, ${lightCompG}, ${lightCompB}) 0%, ${color} 40%, rgba(${r}, ${g}, ${b}, 0.4) 50%, rgba(${r}, ${g}, ${b}, 0.1) 60%, rgba(0, 0, 0, 0) 70%)`;
   };
 
-  const handleAddTemplate = async (template: AgentTemplate) => {
-    try {
-      console.log('Creating agent from template:', template.name);
-      
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        console.error('Error getting user:', userError);
-        alert('Please sign in to create an agent');
-        return;
-      }
-
-      // Create agent with template data
-      const newAgent = {
-        user_id: user.id,
-        template_id: template.id,
-        name: template.name,
-        description: template.description,
-        initials: template.name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2),
-        color: template.default_color,
-        voice: template.default_voice,
-        avatar_url: template.default_avatar_url || null,
-        status: 'online',
-        last_seen: 'now',
-        personality_prompt: template.personality_traits?.join(', ') || null,
-        system_instructions: template.capabilities?.join('. ') || null,
-        custom_settings: {
-          personality_traits: template.personality_traits || [],
-          capabilities: template.capabilities || [],
-          suggested_integrations: template.suggested_integrations || []
-        },
-        tags: template.tags || [],
-        is_favorite: false,
-        sort_order: 0,
-        total_conversations: 0,
-        total_messages: 0,
-        last_used_at: null
-      };
-
-      console.log('Inserting agent:', newAgent);
-
-      const { data: insertedAgent, error: insertError } = await supabase
-        .from('user_agents')
-        .insert(newAgent)
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('Error creating agent:', insertError);
-        alert('Failed to create agent. Please try again.');
-        return;
-      }
-
-      console.log('Agent created successfully:', insertedAgent);
-      
-      // Refresh the page or trigger a reload to show the new agent
-      window.location.reload();
-      
-    } catch (error) {
-      console.error('Error creating agent from template:', error);
-      alert('An unexpected error occurred. Please try again.');
+  const handleAddTemplate = (template: AgentTemplate) => {
+    if (onCreateFromTemplate) {
+      onCreateFromTemplate(template);
     }
   };
 
