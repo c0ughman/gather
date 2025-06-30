@@ -447,7 +447,7 @@ export default function Dashboard({
 
                         <button 
                           onClick={() => handleAddTemplate(template)}
-                          className="w-full flex items-center justify-center space-x-2 p-2 bg-[#186799] hover:bg-[#1a5a7a] text-white rounded-lg transition-colors duration-200 text-sm"
+                          className="w-full flex items-center justify-center space-x-2 p-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-colors duration-200 text-sm"
                         >
                           <Plus className="w-4 h-4" />
                           <span>Add to My Agents</span>
