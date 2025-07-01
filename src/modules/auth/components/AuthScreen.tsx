@@ -109,7 +109,14 @@ export default function AuthScreen() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-[#186799] to-purple-600 rounded-2xl mb-4">
-            <User className="w-8 h-8 text-white" />
+            <img 
+              src="/media/gather-logo-light.png" 
+              alt="Gather Logo" 
+              className="w-8 h-8 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome to Gather</h1>
           <p className="text-slate-400">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowRight, Check, Sparkles, Users, Zap, Brain, MessageCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ArrowRight, Check, Sparkles, Users, Zap, Brain, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../modules/auth/hooks/useAuth';
 
 interface SignupPageProps {
@@ -51,7 +51,7 @@ export default function SignupPage({ onSuccess, onBackToLanding, onSignIn }: Sig
   };
 
   const benefits = [
-    "Create unlimited AI assistants",
+    "Create unlimited AI agents",
     "Connect to 50+ data sources",
     "Voice conversations with natural speech",
     "Advanced document analysis",
@@ -60,7 +60,7 @@ export default function SignupPage({ onSuccess, onBackToLanding, onSignIn }: Sig
   ];
 
   const stats = [
-    { number: "50K+", label: "AI Assistants Created" },
+    { number: "50K+", label: "AI Agents Created" },
     { number: "2M+", label: "Conversations" },
     { number: "99.9%", label: "Uptime" }
   ];
@@ -72,12 +72,6 @@ export default function SignupPage({ onSuccess, onBackToLanding, onSignIn }: Sig
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <button
-              onClick={onBackToLanding}
-              className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-[#186799] to-purple-600 rounded-2xl mb-6 hover:scale-105 transition-transform duration-200"
-            >
-              <MessageCircle className="w-8 h-8 text-white" />
-            </button>
             <h1 className="text-3xl font-bold text-white mb-2">Join Gather</h1>
             <p className="text-slate-400">
               Start building your AI dream team today
@@ -213,7 +207,7 @@ export default function SignupPage({ onSuccess, onBackToLanding, onSignIn }: Sig
             </h2>
             
             <p className="text-xl text-slate-300 mb-8 leading-relaxed">
-              While others struggle with single chatbots, you'll command a specialized team of AI assistants that know your business, understand your goals, and deliver results that matter.
+              While others struggle with single chatbots, you'll command a specialized team of AI agents that know your business, understand your goals, and deliver results that matter.
             </p>
           </div>
 

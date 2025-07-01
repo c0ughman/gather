@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Sparkles, Zap, Brain, Users, MessageCircle, Play, Check, Star, Globe, Shield, Infinity } from 'lucide-react';
+import { ArrowRight, Sparkles, Zap, Brain, Users, Play, Check, Globe, Shield, Infinity } from 'lucide-react';
 
 interface LandingPageProps {
   onGetStarted: () => void;
@@ -8,46 +8,21 @@ interface LandingPageProps {
 
 export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
-  const testimonials = [
-    {
-      quote: "Gather transformed how I work. My AI assistants handle research, analysis, and creative tasks while I focus on strategy.",
-      author: "Sarah Chen",
-      role: "Product Director",
-      company: "TechFlow",
-      rating: 5
-    },
-    {
-      quote: "The integration capabilities are incredible. My AI pulls data from everywhere and gives me insights I never had before.",
-      author: "Marcus Rodriguez",
-      role: "Data Scientist",
-      company: "Insight Labs",
-      rating: 5
-    },
-    {
-      quote: "It's like having a team of specialists available 24/7. Each AI has its own expertise and personality.",
-      author: "Emma Thompson",
-      role: "Creative Director",
-      company: "Studio Bright",
-      rating: 5
-    }
-  ];
-
   const benefits = [
     {
       icon: Brain,
       title: "Amplify Your Intelligence",
-      description: "Create specialized AI assistants that think alongside you, each with unique expertise and personality."
+      description: "Create specialized AI agents that think alongside you, each with unique expertise and personality."
     },
     {
       icon: Zap,
       title: "Instant Access to Everything",
-      description: "Connect your tools, data, and workflows. Your AI assistants know what you know, when you need it."
+      description: "Connect your tools, data, and workflows. Your AI agents know what you know, when you need it."
     },
     {
       icon: Users,
@@ -62,7 +37,7 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
   ];
 
   const features = [
-    "Personalized AI assistants with unique personalities",
+    "Personalized AI agents with unique personalities",
     "Real-time data integration from 50+ sources",
     "Voice conversations with natural speech",
     "Document analysis and knowledge management",
@@ -121,9 +96,14 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
       <nav className="relative z-50 p-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 animated-gradient-bg rounded-xl flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 text-white" />
-            </div>
+            <img 
+              src="/media/gather-logo-light.png" 
+              alt="Gather Logo" 
+              className="w-10 h-10 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
               Gather
             </span>
@@ -132,7 +112,7 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
             onClick={onSignUp}
             className="px-6 py-3 animated-gradient-bg hover:opacity-90 rounded-full font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-white"
           >
-            Get Started Free
+            Get Started Now
           </button>
         </div>
       </nav>
@@ -157,7 +137,7 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
             </h1>
             
             <p className="text-xl md:text-2xl text-slate-300 mb-12 max-w-4xl mx-auto leading-relaxed">
-              Stop switching between tools. Stop waiting for answers. Create specialized AI assistants that know your work, 
+              Stop switching between tools. Stop waiting for answers. Create specialized AI agents that know your work, 
               understand your goals, and deliver results that matter.
             </p>
             
@@ -179,6 +159,11 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
                 </div>
                 <span className="font-semibold">Watch Demo</span>
               </button>
+            </div>
+            <div className="flex justify-end mt-4 -mt-5">
+              <a href="https://bolt.new/" target="_blank" rel="noopener noreferrer">
+                <img src="/media/bolt.png" alt="Powered by bolt.new" className="h-36 w-auto" />
+              </a>
             </div>
           </div>
         </div>
@@ -221,72 +206,6 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
                 <p className="text-slate-400 leading-relaxed">{benefit.description}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Social Proof Section */}
-      <section className="relative z-10 py-32">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-bold mb-6">
-              <span className="bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-                Trusted by Innovators
-              </span>
-            </h2>
-            <p className="text-xl text-slate-400">
-              Join thousands of professionals who've transformed their workflow
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 mb-16">
-            {testimonials.map((testimonial, index) => (
-              <div
-                key={index}
-                className="p-8 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:border-white/20 transition-all duration-300"
-              >
-                <div className="flex items-center space-x-1 mb-4">
-                  {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
-                  ))}
-                </div>
-                <blockquote className="text-lg text-slate-300 mb-6 leading-relaxed">
-                  "{testimonial.quote}"
-                </blockquote>
-                <div>
-                  <div className="font-semibold text-white">{testimonial.author}</div>
-                  <div className="text-sm text-slate-400">{testimonial.role} at {testimonial.company}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="text-center">
-              <div className="text-4xl font-bold animated-gradient-text mb-2">
-                50K+
-              </div>
-              <div className="text-slate-400">AI Assistants Created</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold animated-gradient-text mb-2">
-                2M+
-              </div>
-              <div className="text-slate-400">Conversations</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold animated-gradient-text mb-2">
-                99.9%
-              </div>
-              <div className="text-slate-400">Uptime</div>
-            </div>
-            <div className="text-center">
-              <div className="text-4xl font-bold animated-gradient-text mb-2">
-                4.9★
-              </div>
-              <div className="text-slate-400">User Rating</div>
-            </div>
           </div>
         </div>
       </section>
@@ -334,7 +253,7 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 animated-gradient-bg rounded-lg"></div>
                     <div>
-                      <div className="text-white font-semibold">Research Assistant</div>
+                      <div className="text-white font-semibold">Research Agent</div>
                       <div className="text-slate-400 text-sm">Analyzing market trends...</div>
                     </div>
                   </div>
@@ -387,7 +306,7 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
               </span>
             </h2>
             <p className="text-xl text-slate-400 mb-8 leading-relaxed">
-              Join the AI revolution. Create your first intelligent assistant in minutes, not months.
+              Join the AI revolution. Create your first intelligent agent in minutes, not months.
             </p>
             
             <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
@@ -395,13 +314,9 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
                 onClick={onSignUp}
                 className="group px-8 py-4 animated-gradient-bg hover:opacity-90 rounded-full font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-2xl hover:shadow-3xl flex items-center space-x-3 text-white"
               >
-                <span>Get Started Free</span>
+                <span>Get Started Now</span>
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
               </button>
-              
-              <div className="text-slate-400 text-sm">
-                No credit card required
-              </div>
             </div>
           </div>
         </div>
@@ -412,9 +327,14 @@ export default function LandingPage({ onGetStarted, onSignUp }: LandingPageProps
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-3 mb-4 md:mb-0">
-              <div className="w-8 h-8 animated-gradient-bg rounded-lg flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-white" />
-              </div>
+              <img 
+                src="/media/gather-logo-light.png" 
+                alt="Gather Logo" 
+                className="w-8 h-8 object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
               <span className="text-xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
                 Gather
               </span>

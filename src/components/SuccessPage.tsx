@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle, ArrowRight, MessageCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '../modules/database/lib/supabase';
 
 export default function SuccessPage() {
@@ -138,9 +138,14 @@ export default function SuccessPage() {
       <nav className="relative z-50 p-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 animated-gradient-bg rounded-xl flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 text-white" />
-            </div>
+            <img 
+              src="/media/gather-logo-light.png" 
+              alt="Gather Logo" 
+              className="w-10 h-10 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
               Gather
             </span>

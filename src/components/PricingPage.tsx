@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, ArrowRight, Zap, Shield, Star, MessageCircle, Loader2 } from 'lucide-react';
+import { Check, ArrowRight, Zap, Shield, Star, Loader2 } from 'lucide-react';
 import { PRODUCTS } from '../stripe-config';
 import { stripeClient } from '../modules/payments/stripe-client';
 
@@ -62,9 +62,14 @@ export default function PricingPage({ onSelectPlan, onStayFree }: PricingPagePro
       <nav className="relative z-50 p-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 animated-gradient-bg rounded-xl flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 text-white" />
-            </div>
+            <img 
+              src="/media/gather-logo-light.png" 
+              alt="Gather Logo" 
+              className="w-10 h-10 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
               Gather
             </span>
@@ -188,11 +193,6 @@ export default function PricingPage({ onSelectPlan, onStayFree }: PricingPagePro
           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
             <h3 className="text-xl font-semibold text-white mb-3">What happens if I reach my usage limits?</h3>
             <p className="text-slate-300">You'll receive a notification when you're approaching your limits. Once reached, you can continue using existing features but won't be able to create new agents or upload additional documents until the next billing cycle or until you upgrade your plan.</p>
-          </div>
-          
-          <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
-            <h3 className="text-xl font-semibold text-white mb-3">Is there a free trial for paid plans?</h3>
-            <p className="text-slate-300">Yes, all paid plans come with a 14-day free trial. You can cancel anytime during the trial period and won't be charged.</p>
           </div>
           
           <div className="bg-slate-800/30 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
