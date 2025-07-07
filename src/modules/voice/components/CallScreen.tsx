@@ -1,259 +1,33 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, Mic, MicOff, PhoneOff, Volume2, MoreVertical } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft, Mic, MicOff, Phone, PhoneOff, Volume2, VolumeX } from 'lucide-react';
 import { AIContact } from '../../../core/types/types';
 import { geminiLiveService } from '../services/geminiLiveService';
-import { useMobile } from '../../../core/hooks/useLocalStorage';
 
 interface CallScreenProps {
   contact: AIContact;
   onBack: () => void;
-  onEndCall?: () => void;
-  onToggleMute?: () => void;
-  showSidebar?: boolean;
-  onToggleSidebar?: () => void;
 }
 
-export default function CallScreen({ 
-  contact, 
-  onBack, 
-  onEndCall,
-  onToggleMute,
-  showSidebar = true,
-  onToggleSidebar
-}: CallScreenProps) {
-  const [connectionState, setConnectionState] = useState<'connecting' | 'connected' | 'ended'>('connecting');
-  const [serviceState, setServiceState] = useState<'idle' | 'listening' | 'processing' | 'responding'>('idle');
+type ConnectionState = 'initializing' | 'connecting' | 'connected' | 'ended' | 'error';
+type ServiceState = 'idle' | 'listening' | 'processing' | 'responding';
+
+export default function CallScreen({ contact, onBack }: CallScreenProps) {
+  const [connectionState, setConnectionState] = useState<ConnectionState>('initializing');
+  const [serviceState, setServiceState] = useState<ServiceState>('idle');
   const [isMuted, setIsMuted] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [responseText, setResponseText] = useState<string>("");
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [callDuration, setCallDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
   
-  const serviceInitialized = useRef(false);
-  const initializationInProgress = useRef(false);
-  const durationInterval = useRef<number | null>(null);
-  const isMobile = useMobile();
+  const callStartTime = useRef<number | null>(null);
+  const durationInterval = useRef<NodeJS.Timeout | null>(null);
+  const isInitialized = useRef(false);
 
-  // Duration timer
-  useEffect(() => {
-    if (connectionState === 'connected') {
-      durationInterval.current = window.setInterval(() => {
-        setDuration(prev => prev + 1);
-      }, 1000);
-    } else {
-      if (durationInterval.current) {
-        clearInterval(durationInterval.current);
-        durationInterval.current = null;
-      }
-    }
-
-    return () => {
-      if (durationInterval.current) {
-        clearInterval(durationInterval.current);
-      }
-    };
-  }, [connectionState]);
-
-  // Initialize service when component mounts
-  useEffect(() => {
-    const initService = async () => {
-      if (!serviceInitialized.current && !initializationInProgress.current) {
-        initializationInProgress.current = true;
-        setIsInitializing(true);
-        
-        try {
-          console.log("🚀 Starting Live API initialization...");
-          
-          // Set up event handlers first
-          geminiLiveService.onResponse((response) => {
-            console.log("📝 Received response:", response.text);
-            setResponseText(response.text);
-          });
-          
-          geminiLiveService.onError((error) => {
-            console.error("❌ Gemini Live error:", error);
-            setResponseText("I'm having trouble with the connection. Let's try again.");
-            setConnectionState('ended');
-          });
-          
-          geminiLiveService.onStateChange((state) => {
-            console.log(`🔄 Service state changed to: ${state}`);
-            setServiceState(state);
-            
-            // When we start listening, mark as connected
-            if (state === 'listening' && connectionState === 'connecting') {
-              console.log("✅ Connection established - now listening");
-              setConnectionState('connected');
-            }
-          });
-          
-          // Initialize audio first
-          console.log("🎤 Initializing audio...");
-          const audioInitialized = await geminiLiveService.initialize();
-          
-          if (!audioInitialized) {
-            console.error("❌ Audio initialization failed");
-            setResponseText("Could not access microphone. Please check permissions.");
-            setConnectionState('ended');
-            return;
-          }
-          
-          console.log("✅ Audio initialized, starting session...");
-          
-          // Start the Live API session
-          await geminiLiveService.startSession(contact);
-          
-          serviceInitialized.current = true;
-          console.log("✅ Live API session started successfully");
-          
-        } catch (error) {
-          console.error("❌ Failed to initialize Gemini Live service:", error);
-          setResponseText("Failed to start voice chat. Please try again.");
-          setConnectionState('ended');
-        } finally {
-          initializationInProgress.current = false;
-          setIsInitializing(false);
-        }
-      }
-    };
-    
-    initService();
-    
-    // Cleanup when component unmounts
-    return () => {
-      if (serviceInitialized.current) {
-        console.log("🧹 Cleaning up Live API session");
-        geminiLiveService.endSession();
-        serviceInitialized.current = false;
-      }
-    };
-  }, [contact.id, connectionState]);
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getStatusText = () => {
-    if (isInitializing) {
-      return 'Initializing...';
-    }
-    
-    switch (connectionState) {
-      case 'connecting':
-        return 'Connecting...';
-      case 'connected':
-        return formatDuration(duration);
-      case 'ended':
-        return 'Call ended';
-      default:
-        return '';
-    }
-  };
-
-  const getStatusColor = () => {
-    if (isInitializing) {
-      return 'text-yellow-400';
-    }
-    
-    switch (connectionState) {
-      case 'connecting':
-        return 'text-yellow-400';
-      case 'connected':
-        return 'text-green-400';
-      case 'ended':
-        return 'text-red-400';
-      default:
-        return 'text-slate-400';
-    }
-  };
-
-  const getServiceStateText = () => {
-    if (isInitializing) {
-      return "🔧 Initializing...";
-    }
-    
-    switch (serviceState) {
-      case 'listening':
-        return "🎤 Listening...";
-      case 'processing':
-        return "🧠 Processing...";
-      case 'responding':
-        return "🗣️ Speaking...";
-      case 'idle':
-        return connectionState === 'connected' ? "💬 Ready to chat" : getStatusText();
-      default:
-        return getStatusText();
-    }
-  };
-
-  const getServiceStateColor = () => {
-    if (isInitializing) {
-      return 'text-yellow-400';
-    }
-    
-    switch (serviceState) {
-      case 'listening':
-        return 'text-[#186799]';
-      case 'processing':
-        return 'text-yellow-400';
-      case 'responding':
-        return 'text-green-400';
-      case 'idle':
-        return getStatusColor();
-      default:
-        return getStatusColor();
-    }
-  };
-
-  const handleMicToggle = async () => {
-    if (!serviceInitialized.current || connectionState !== 'connected') {
-      return;
-    }
-
-    const newMutedState = !isMuted;
-    setIsMuted(newMutedState);
-    
-    if (onToggleMute) {
-      onToggleMute();
-    }
-    
-    try {
-      if (newMutedState) {
-        // Muting - stop listening
-        geminiLiveService.stopListening();
-      } else {
-        // Unmuting - start listening
-        await geminiLiveService.startListening();
-      }
-    } catch (error) {
-      console.error("Failed to toggle microphone:", error);
-      // Revert the muted state if the operation failed
-      setIsMuted(!newMutedState);
-    }
-  };
-
-  const handleEndCall = () => {
-    console.log("🛑 Ending call");
-    setConnectionState('ended');
-    
-    if (serviceInitialized.current) {
-      geminiLiveService.endSession();
-      serviceInitialized.current = false;
-    }
-    
-    if (onEndCall && typeof onEndCall === 'function') {
-      onEndCall();
-    } else {
-      onBack();
-    }
-  };
-
-  const toggleSidebar = () => {
-    if (onToggleSidebar) {
-      onToggleSidebar();
-    }
-  };
+  const addDebugInfo = useCallback((info: string) => {
+    console.log(`[CallScreen Debug] ${info}`);
+    setDebugInfo(prev => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${info}`]);
+  }, []);
 
   // Helper function to create radial gradient for agents without avatars
   const createAgentGradient = (color: string) => {
@@ -273,142 +47,237 @@ export default function CallScreen({
     return `radial-gradient(circle, rgb(${lightCompR}, ${lightCompG}, ${lightCompB}) 0%, ${color} 40%, rgba(${r}, ${g}, ${b}, 0.4) 50%, rgba(${r}, ${g}, ${b}, 0.1) 60%, rgba(0, 0, 0, 0) 70%)`;
   };
 
+  // Initialize call
+  useEffect(() => {
+    if (isInitialized.current) return;
+    isInitialized.current = true;
+
+    const initializeCall = async () => {
+      try {
+        addDebugInfo('Starting call initialization...');
+        setConnectionState('initializing');
+        setError(null);
+
+        // Check if API key is available
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        if (!apiKey) {
+          throw new Error('Gemini API key not found. Please check your environment variables.');
+        }
+        addDebugInfo('API key found');
+
+        // Initialize the service with contact information
+        addDebugInfo('Initializing Gemini Live service...');
+        await geminiLiveService.initialize({
+          systemInstruction: `You are ${contact.name}, ${contact.description}. Speak naturally and conversationally. Keep responses concise but engaging.`,
+          voice: contact.voice || 'Puck'
+        });
+        addDebugInfo('Service initialized successfully');
+
+        // Set up event listeners
+        geminiLiveService.onStateChange((newState) => {
+          addDebugInfo(`Service state changed to: ${newState}`);
+          setServiceState(newState);
+        });
+
+        geminiLiveService.onError((error) => {
+          addDebugInfo(`Service error: ${error}`);
+          setError(error);
+          setConnectionState('error');
+        });
+
+        // Start the connection
+        addDebugInfo('Starting Live API connection...');
+        setConnectionState('connecting');
+        
+        const success = await geminiLiveService.startCall();
+        
+        if (success) {
+          addDebugInfo('Live API connection established');
+          setConnectionState('connected');
+          setServiceState('listening');
+          
+          // Start call timer
+          callStartTime.current = Date.now();
+          durationInterval.current = setInterval(() => {
+            if (callStartTime.current) {
+              setCallDuration(Math.floor((Date.now() - callStartTime.current) / 1000));
+            }
+          }, 1000);
+        } else {
+          throw new Error('Failed to establish Live API connection');
+        }
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        addDebugInfo(`Initialization failed: ${errorMessage}`);
+        setError(errorMessage);
+        setConnectionState('error');
+      }
+    };
+
+    initializeCall();
+
+    // Cleanup on unmount
+    return () => {
+      if (durationInterval.current) {
+        clearInterval(durationInterval.current);
+      }
+      geminiLiveService.endCall();
+    };
+  }, [contact, addDebugInfo]);
+
+  const handleEndCall = useCallback(() => {
+    addDebugInfo('Ending call...');
+    setConnectionState('ended');
+    
+    if (durationInterval.current) {
+      clearInterval(durationInterval.current);
+    }
+    
+    geminiLiveService.endCall();
+    onBack();
+  }, [onBack, addDebugInfo]);
+
+  const handleMuteToggle = useCallback(() => {
+    const newMutedState = !isMuted;
+    setIsMuted(newMutedState);
+    
+    if (newMutedState) {
+      addDebugInfo('Microphone muted');
+      geminiLiveService.stopListening();
+    } else {
+      addDebugInfo('Microphone unmuted');
+      geminiLiveService.startListening();
+    }
+  }, [isMuted, addDebugInfo]);
+
+  const handleSpeakerToggle = useCallback(() => {
+    setIsSpeakerOn(!isSpeakerOn);
+    addDebugInfo(`Speaker ${!isSpeakerOn ? 'enabled' : 'disabled'}`);
+  }, [isSpeakerOn, addDebugInfo]);
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getStatusText = () => {
+    if (connectionState === 'error') return error || 'Connection error';
+    if (connectionState === 'initializing') return 'Initializing...';
+    if (connectionState === 'connecting') return 'Connecting...';
+    if (connectionState === 'ended') return 'Call ended';
+    
+    // Connected state - show service state
+    switch (serviceState) {
+      case 'listening': return 'Listening...';
+      case 'processing': return 'Processing...';
+      case 'responding': return 'Speaking...';
+      default: return 'Connected';
+    }
+  };
+
+  const getStatusColor = () => {
+    if (connectionState === 'error') return 'text-red-400';
+    if (connectionState === 'initializing' || connectionState === 'connecting') return 'text-yellow-400';
+    if (connectionState === 'ended') return 'text-slate-400';
+    
+    switch (serviceState) {
+      case 'listening': return 'text-green-400';
+      case 'processing': return 'text-blue-400';
+      case 'responding': return 'text-purple-400';
+      default: return 'text-white';
+    }
+  };
+
   return (
     <div className="h-full bg-glass-bg flex flex-col">
       {/* Header */}
-      <div className={`p-6 flex items-center justify-between border-b border-slate-700 bg-glass-panel glass-effect ${isMobile ? 'safe-area-top' : ''}`}>
-        <button
-          onClick={onBack}
-          className="p-3 rounded-full hover:bg-slate-800 transition-colors duration-200"
-        >
-          <ArrowLeft className="w-6 h-6 text-white" />
-        </button>
+      <div className="bg-glass-panel glass-effect border-b border-slate-700 p-4 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200"
+          >
+            <ArrowLeft className="w-5 h-5 text-white" />
+          </button>
+          <h1 className="text-xl font-semibold text-white">Voice Call</h1>
+        </div>
         
-        <div className="text-center">
-          <h2 className="text-white text-xl font-semibold">{contact.name}</h2>
-          <p className={`text-sm font-medium ${getStatusColor()}`}>
+        {connectionState === 'connected' && (
+          <div className="text-slate-400 text-sm">
+            {formatDuration(callDuration)}
+          </div>
+        )}
+      </div>
+
+      {/* Call Interface */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8">
+        {/* Agent Avatar */}
+        <div className="w-32 h-32 rounded-full mb-6 flex items-center justify-center overflow-hidden shadow-2xl">
+          {contact.avatar ? (
+            <img
+              src={contact.avatar}
+              alt={contact.name}
+              className="w-full h-full object-cover rounded-full"
+            />
+          ) : (
+            <div 
+              className="w-full h-full rounded-full"
+              style={{ background: createAgentGradient(contact.color) }}
+            />
+          )}
+        </div>
+
+        {/* Agent Info */}
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-white mb-2">{contact.name}</h2>
+          <p className={`text-lg font-medium ${getStatusColor()}`}>
             {getStatusText()}
           </p>
-        </div>
-        
-        {!isMobile && (
-          <button 
-            onClick={toggleSidebar}
-            className="p-3 rounded-full hover:bg-slate-800 transition-colors duration-200"
-          >
-            <MoreVertical className="w-6 h-6 text-slate-400" />
-          </button>
-        )}
-        
-        {isMobile && (
-          <div className="w-12 h-12" /> // Spacer to center the title
-        )}
-      </div>
-
-      {/* Main Call Area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 max-w-2xl mx-auto">
-        {/* Avatar */}
-        <div className="relative mb-8">
-          <div
-            className={`w-40 h-40 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300 overflow-hidden ${
-              isInitializing || connectionState === 'connecting' ? 'animate-pulse scale-110' : ''
-            } ${
-              serviceState === 'listening' ? 'ring-4 ring-[#186799] ring-opacity-75' : ''
-            } ${
-              serviceState === 'responding' ? 'ring-4 ring-green-400 ring-opacity-75' : ''
-            } ${
-              serviceState === 'processing' ? 'ring-4 ring-yellow-400 ring-opacity-75' : ''
-            }`}
-          >
-            {contact.avatar ? (
-              <img
-                src={contact.avatar}
-                alt={contact.name}
-                className="w-full h-full object-cover rounded-2xl"
-              />
-            ) : (
-              <div
-                className="w-full h-full rounded-2xl"
-                style={{ background: createAgentGradient(contact.color) }}
-              />
-            )}
-          </div>
-          
-          {/* Pulse rings for connecting state */}
-          {(isInitializing || connectionState === 'connecting') && (
-            <>
-              <div 
-                className="absolute inset-0 rounded-2xl border-4 animate-ping opacity-50"
-                style={{ borderColor: contact.color }}
-              ></div>
-              <div 
-                className="absolute inset-0 rounded-2xl border-2 animate-ping opacity-30"
-                style={{ borderColor: contact.color, animationDelay: '0.5s' }}
-              ></div>
-            </>
+          {connectionState === 'connected' && (
+            <p className="text-slate-400 text-sm mt-2">
+              Voice: {contact.voice || 'Puck'}
+            </p>
           )}
+        </div>
 
-          {/* State indicators */}
-          {serviceState === 'listening' && (
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-[#186799] rounded-full flex items-center justify-center animate-pulse">
-              <Mic className="w-4 h-4 text-white" />
+        {/* Debug Info (only show in development) */}
+        {import.meta.env.DEV && debugInfo.length > 0 && (
+          <div className="mb-6 p-3 bg-slate-800/50 rounded-lg border border-slate-700 max-w-md w-full">
+            <h3 className="text-xs font-medium text-slate-400 mb-2">Debug Info:</h3>
+            <div className="space-y-1">
+              {debugInfo.map((info, index) => (
+                <p key={index} className="text-xs text-slate-300 font-mono">{info}</p>
+              ))}
             </div>
-          )}
-
-          {serviceState === 'responding' && (
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center animate-pulse">
-              <Volume2 className="w-4 h-4 text-white" />
-            </div>
-          )}
-
-          {serviceState === 'processing' && (
-            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center animate-spin">
-              <div className="w-3 h-3 bg-white rounded-full"></div>
-            </div>
-          )}
-        </div>
-
-        {/* Contact Info */}
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-white mb-2">{contact.name}</h1>
-          <p className="text-slate-300 text-base max-w-md mx-auto leading-relaxed">
-            {contact.description}
-          </p>
-        </div>
-
-        {/* Status Indicator */}
-        <div className="mb-8">
-          <div className={`px-6 py-3 rounded-full bg-slate-800 border ${
-            connectionState === 'connected' ? 'border-green-500' : 'border-slate-600'
-          }`}>
-            <span className={`text-lg font-medium ${getServiceStateColor()}`}>
-              {getServiceStateText()}
-            </span>
-          </div>
-        </div>
-        
-        {/* Response Text */}
-        {responseText && connectionState === 'connected' && (
-          <div className="mb-8 max-w-md bg-slate-800 bg-opacity-70 p-4 rounded-lg border border-slate-700">
-            <p className="text-slate-300 text-sm italic">"{responseText}"</p>
           </div>
         )}
-      </div>
 
-      {/* Call Controls */}
-      <div className={`pb-8 px-8 ${isMobile ? 'safe-area-bottom' : ''}`}>
-        <div className="flex items-center justify-center space-x-6">
+        {/* Error Display */}
+        {connectionState === 'error' && (
+          <div className="mb-6 p-4 bg-red-900/20 border border-red-700 rounded-lg max-w-md w-full">
+            <p className="text-red-300 text-sm text-center">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-3 w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors duration-200 text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Call Controls */}
+        <div className="flex items-center space-x-6">
           {/* Mute Button */}
           <button
-            onClick={handleMicToggle}
+            onClick={handleMuteToggle}
             disabled={connectionState !== 'connected'}
             className={`p-4 rounded-full transition-all duration-200 ${
               isMuted
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-slate-700 hover:bg-slate-600'
-            } ${
-              connectionState !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''
-            } shadow-lg hover:shadow-xl hover:scale-105`}
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isMuted ? (
               <MicOff className="w-6 h-6 text-white" />
@@ -420,30 +289,37 @@ export default function CallScreen({
           {/* End Call Button */}
           <button
             onClick={handleEndCall}
-            className="p-6 rounded-full bg-red-600 hover:bg-red-700 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 group"
+            className="p-4 bg-red-600 hover:bg-red-700 rounded-full transition-colors duration-200"
           >
-            <PhoneOff className="w-8 h-8 text-white group-hover:rotate-12 transition-transform duration-200" />
+            <PhoneOff className="w-6 h-6 text-white" />
           </button>
 
           {/* Speaker Button */}
           <button
+            onClick={handleSpeakerToggle}
             disabled={connectionState !== 'connected'}
-            className={`p-4 rounded-full bg-slate-700 hover:bg-slate-600 transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105 ${
-              connectionState !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+            className={`p-4 rounded-full transition-all duration-200 ${
+              isSpeakerOn
+                ? 'bg-slate-700 hover:bg-slate-600'
+                : 'bg-slate-600 hover:bg-slate-500'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            <Volume2 className="w-6 h-6 text-white" />
+            {isSpeakerOn ? (
+              <Volume2 className="w-6 h-6 text-white" />
+            ) : (
+              <VolumeX className="w-6 h-6 text-white" />
+            )}
           </button>
         </div>
 
-        {/* Control Labels */}
-        <div className="flex items-center justify-center space-x-6 mt-4">
-          <span className="text-slate-400 text-sm w-16 text-center">
-            {isMuted ? 'Unmute' : 'Mute'}
-          </span>
-          <span className="text-slate-400 text-sm w-20 text-center">End Call</span>
-          <span className="text-slate-400 text-sm w-16 text-center">Speaker</span>
-        </div>
+        {/* Instructions */}
+        {connectionState === 'connected' && serviceState === 'listening' && (
+          <div className="mt-8 text-center">
+            <p className="text-slate-400 text-sm">
+              Start speaking to begin the conversation
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
