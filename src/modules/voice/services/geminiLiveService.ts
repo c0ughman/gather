@@ -1473,6 +1473,13 @@ class GeminiLiveService {
     // Auto-listen is handled by the built-in VAD, so this is just for interface compatibility
     console.log(`Auto-listen ${enabled ? 'enabled' : 'disabled'} (handled by built-in VAD)`);
   }
+
+  /**
+   * End call - alias for endSession for compatibility
+   */
+  public endCall(): void {
+    this.endSession();
+  }
 }
 
 // Export singleton instance
