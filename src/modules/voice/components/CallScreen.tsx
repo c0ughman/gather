@@ -7,7 +7,7 @@ import { useMobile } from '../../../core/hooks/useLocalStorage';
 interface CallScreenProps {
   contact: AIContact;
   onBack: () => void;
-  onEndCall: () => void;
+  onEndCall?: () => void; // Make optional with default
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
 }
@@ -15,7 +15,7 @@ interface CallScreenProps {
 export default function CallScreen({ 
   contact, 
   onBack, 
-  onEndCall,
+  onEndCall = () => {}, // Provide default empty function
   showSidebar = true,
   onToggleSidebar
 }: CallScreenProps) {
@@ -192,7 +192,14 @@ export default function CallScreen({
       serviceInitialized.current = false;
     }
     setConnectionState('ended');
-    onEndCall();
+    
+    // Call the onEndCall prop if it's a function
+    if (typeof onEndCall === 'function') {
+      onEndCall();
+    } else {
+      // Fallback to onBack if onEndCall is not provided
+      onBack();
+    }
   };
 
   const toggleSidebar = () => {
@@ -222,20 +229,10 @@ export default function CallScreen({
     return `radial-gradient(circle, rgb(${lightCompR}, ${lightCompG}, ${lightCompB}) 0%, ${color} 40%, rgba(${r}, ${g}, ${b}, 0.4) 50%, rgba(${r}, ${g}, ${b}, 0.1) 60%, rgba(0, 0, 0, 0) 70%)`;
   };
 
-  // Header positioning - adjust for sidebar on desktop, full width on mobile
-  const headerClass = isMobile ? "left-0 right-0" : (showSidebar ? "left-80 right-80" : "left-80 right-0");
-
   return (
-    <div className="h-full bg-glass-bg flex flex-col">
-      {/* Header - Fixed at top */}
-      <div className={`fixed top-0 ${headerClass} z-20 border-b border-slate-700 p-4 flex items-center justify-between ${isMobile ? 'safe-area-top' : ''}`}
-        style={{
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-          backgroundColor: 'rgba(2, 10, 22, 0.08)'
-        }}
-      >
+    <div className="h-full bg-glass-bg flex flex-col relative">
+      {/* Header */}
+      <div className="border-b border-slate-700 p-4 flex items-center justify-between bg-slate-900/50 backdrop-blur-sm">
         <button
           onClick={onBack}
           className="p-2 rounded-full hover:bg-slate-700 transition-colors duration-200"
@@ -265,8 +262,8 @@ export default function CallScreen({
         )}
       </div>
 
-      {/* Main Call Area - Scrollable with padding for fixed header and controls */}
-      <div className={`flex-1 overflow-y-auto pt-20 pb-32 px-6 ${isMobile ? 'mobile-scroll' : ''}`}>
+      {/* Main Call Area */}
+      <div className="flex-1 overflow-y-auto px-6 py-8">
         <div className="max-w-2xl mx-auto h-full flex flex-col items-center justify-center">
           {/* Avatar */}
           <div className="relative mb-8">
@@ -357,17 +354,9 @@ export default function CallScreen({
         </div>
       </div>
 
-      {/* Call Controls - Fixed at bottom */}
-      <div className={`fixed bottom-0 ${headerClass} z-10 p-6 ${isMobile ? 'safe-area-bottom' : ''}`}>
-        <div 
-          className="rounded-2xl p-6"
-          style={{
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-            backgroundColor: 'rgba(2, 10, 22, 0.08)'
-          }}
-        >
+      {/* Call Controls */}
+      <div className="p-6 bg-slate-900/50 backdrop-blur-sm border-t border-slate-700">
+        <div className="max-w-md mx-auto">
           <div className="flex items-center justify-center space-x-6">
             {/* Mute Button */}
             <button
